@@ -5,12 +5,6 @@ from setuptools import find_packages, setup
 
 package_name = 'r7021e_bringup'
 
-# Parameter files live at the repository root, in config/, not inside this package --
-# one source of truth for a workspace that may hold more packages later. config/ here
-# is a symlink to that directory; this glob follows it, so ament_index finds the files
-# through the installed package share without knowing where the repo is checked out.
-# Needs a filesystem with symlinks (not /mnt/c on WSL).
-
 setup(
     name=package_name,
     version='0.1.0',

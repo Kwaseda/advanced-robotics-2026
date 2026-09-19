@@ -1,8 +1,8 @@
 """Unit tests for reading a LaserScan.
 
-The failure these exist to prevent is the one in wiki/closest-wall-point.md: a raw
-min() over the range array returns 0.0 for the whole run, because the lidar reports
-0.0 and inf for beams that measured nothing, and the plot is flat and wrong.
+The failure these exist to prevent: a raw min() over the range array returns 0.0 for
+the whole run, because the lidar reports 0.0 and inf for beams that measured nothing,
+and the plot is flat and wrong.
 """
 
 import math

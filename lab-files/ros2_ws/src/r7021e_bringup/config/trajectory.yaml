@@ -1,10 +1,10 @@
 # Figure of eight setpoint generator. Publishes a moving goal on /new_position.
 #
-# Decision D4 in PRD 01: the trajectory node publishes setpoints and the controller
-# chases them. The path is not generated inside the controller. That keeps
-# /new_position the single control entry point, so a terminal setpoint, this node and
-# a Lab 3 planner all drive the same controller, and it makes the current goal a real
-# topic, which the graded video has to display.
+# The trajectory node publishes setpoints and the controller chases them. The path
+# is not generated inside the controller. That keeps /new_position the single control
+# entry point, so a terminal setpoint, this node and a later lab's planner all drive
+# the same controller, and it makes the current goal a real topic, which the graded
+# video has to display.
 
 /trajectory_node:
   ros__parameters:

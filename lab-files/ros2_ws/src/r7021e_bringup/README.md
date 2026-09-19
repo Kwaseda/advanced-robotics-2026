@@ -5,9 +5,8 @@ its own: it starts the ones in `r7021e_control` and decides which of them run to
 
 ## Where the numbers live
 
-`config/` in this package is a symlink to `config/` at the repository root. That is
-where the parameter files actually are, so `config/robot.yaml` is one file rather than
-one per package. Editing it edits what every node reads.
+Parameter files live in this package's own `config/`, so `config/robot.yaml` is one
+file rather than one per node.
 
 `robot.yaml` is loaded first for every node, then that node's own file. Later files win
 on a repeated key, so a node file could in principle override a physical limit. None of
@@ -64,7 +63,7 @@ ros2 topic info /cmd_vel -v
 It prints the message type on both ends. A `Twist` publisher against a `TwistStamped`
 subscriber is not an error, it is two endpoints that never connect: nothing logs, the
 robot sits still, and everything looks correct. Thirty seconds against a plausible hour
-of a 180 minute session. See `wiki/twiststamped-header-trap.md`.
+of a 180 minute session.
 
 Then, in order:
 
@@ -93,8 +92,8 @@ Then, in order:
 
 ## Recording
 
-Decision D6 in PRD 01. This topic list is what the graded video needs, and a bag
-missing one of them cannot produce it, which means the run has to be done again.
+This topic list is what the graded video needs, and a bag missing one of them cannot
+produce it, which means the run has to be done again.
 
 ```bash
 ros2 bag record -o bags/$(date +%Y-%m-%d)-lab1-eight /odom /cmd_vel /scan /new_position /tf /tf_static
@@ -106,7 +105,7 @@ Check the recorded topic list before leaving the lab, not afterwards:
 ros2 bag info bags/<the bag>
 ```
 
-`/closest_wall_point` is not in D6's list and does not need to be: it is computed from
+`/closest_wall_point` is not in that list and does not need to be: it is computed from
 `/scan`, which is recorded, so the task 3 plot can be regenerated from the bag by
 running `scan_monitor_node` against a replay. Adding it costs nothing and saves that
 step, which is a judgement call rather than a requirement.
@@ -118,12 +117,12 @@ The assignment requires the video to show the current goal at every instant.
 had no display that could draw one directly, and the topic name and type are fixed
 by the course so the message itself couldn't change.
 
-Option 1 was taken: `goal_marker_node` subscribes `/new_position` and republishes it
-as a `visualization_msgs/Marker` (a green sphere) on `/goal_marker`, in the `odom`
-frame. `lab1.launch.py` starts it unconditionally alongside the other nodes, and
+`goal_marker_node` subscribes `/new_position` and republishes it as a
+`visualization_msgs/Marker` (a green sphere) on `/goal_marker`, in the `odom` frame.
+`lab1.launch.py` starts it unconditionally alongside the other nodes, and
 `rviz/lab1.rviz` already has a Marker display on that topic, so it shows up with no
-extra setup. Five nodes now, where decision D3 named four -- the same honest
-"visualisation is its own node" rule `scan_monitor_node` already follows.
+extra setup. That's a fifth node now, following the same "visualisation is its own
+node" rule `scan_monitor_node` already used for the wall-point plot.
 
 Everything the video needs is in `rviz/lab1.rviz`: current position, the path so far
 as an odometry trail, the laser scan, and now the current goal.

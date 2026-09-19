@@ -12,9 +12,9 @@ another terminal:
     source <workspace>/install/setup.bash
     python3 scripts/record_demo.py bags/task1-position
 
-It finds the RViz window, raises it, starts `ros2 bag record` (the D6 topic list)
-and a GStreamer screen capture of that window together, and stops both cleanly on
-Ctrl-C. Run your task (publish goals, etc.) in a third terminal while this runs.
+It finds the RViz window, raises it, starts `ros2 bag record` (the required topic
+list) and a GStreamer screen capture of that window together, and stops both cleanly
+on Ctrl-C. Run your task (publish goals, etc.) in a third terminal while this runs.
 
 Why GStreamer's ximagesrc and not ffmpeg's x11grab: x11grab captures a fixed screen
 region from the (possibly composited) root window, which on this desktop returns a

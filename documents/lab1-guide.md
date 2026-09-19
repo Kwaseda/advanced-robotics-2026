@@ -1,29 +1,33 @@
-# Lab 1 Complete Guide: ROS 2 Position Control and Wall Following
+# Lab 1 complete guide: ROS 2 position control and wall following
 
 ## Overview
 
-This guide explains the R7021E Lab 1 implementation. The system does closed-loop position control and wall following on a TurtleBot3 robot. It uses Near Identity Diffeomorphism (NID) to linearize the non-holonomic unicycle model, which lets us control position with a simple proportional controller.
+This guide covers the R7021E Lab 1 implementation: closed-loop position control and
+wall following on a TurtleBot3 Burger. The position controller uses Near Identity
+Diffeomorphism (NID) to work around the fact that the robot can't move sideways,
+which is what lets a plain proportional controller drive it toward a goal.
 
-## Project Structure
+## Project structure
 
-The codebase has two ROS 2 packages.
+Two ROS 2 packages.
 
-r7021e_control contains the control algorithms and ROS nodes:
-- controller_node.py does closed-loop position tracking using NID
-- trajectory_node.py generates the figure-8 trajectory
-- scan_monitor_node.py finds the closest wall point from lidar data
-- wall_follower_node.py handles wall following
-- Support modules: geometry.py, nid_controller.py, trajectories.py, wall_following.py, scan_utils.py
+`r7021e_control` has the control algorithms and the nodes that run them:
+- `controller_node.py` -- closed-loop position tracking using NID (Tasks 1 and 2)
+- `trajectory_node.py` -- generates the figure-eight trajectory (Task 2)
+- `scan_monitor_node.py` -- finds the closest wall point from the lidar (Task 3)
+- `wall_follower_node.py` -- wall following (Task 4)
+- `goal_marker_node.py` -- republishes the current goal as an RViz marker
+- Plain-Python support modules with no ROS imports, so they're unit-testable on
+  their own: `geometry.py`, `nid_controller.py`, `trajectories.py`,
+  `wall_following.py`, `scan_utils.py`
 
-r7021e_bringup has launch files and configuration:
-- lab1.launch.py is the main launch file for all four tasks
-- rviz/lab1.rviz is the RViz configuration for visualization
-- Parameter files are linked from config/
+`r7021e_bringup` has the launch file, the RViz configuration, and each node's own
+parameter files under its `config/`.
 
-## Configuration Files
+## Configuration files
 
 ### robot.yaml
-This file has the physical limits of the TurtleBot3 Burger:
+Physical limits of the TurtleBot3 Burger:
 - max_linear_velocity: 0.22 m/s
 - max_angular_velocity: 2.84 rad/s
 - Wheel radius: 0.033 m, wheel separation: 0.160 m
@@ -38,20 +42,20 @@ Position controller parameters:
 - Goal tolerance: 0.05 m
 
 ### trajectory.yaml
-Figure-8 parameters:
-- Width: 1.0 m, Height: 0.5 m
+Figure-eight parameters:
+- Width: 1.0 m, height: 0.5 m
 - Lap period: 50.0 s
 - Number of laps: 2
 - Start delay: 3.0 s
 
 ### wall_follower.yaml
-Wall following parameters:
+Wall-following parameters:
 - Follow distance: 0.5 m
 - Speed: 0.15 m/s
 - Loop closure tolerance: 0.2 m
 - Follow side: right
 
-## Building the System
+## Building the system
 
 ```bash
 cd ~/ros2_ws
@@ -59,9 +63,9 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-## Testing Commands for Simulation
+## Testing commands for simulation
 
-### Task 1 - Position Tracking
+### Task 1: position tracking
 
 Start the controller in simulation:
 ```bash
@@ -76,58 +80,60 @@ ros2 topic pub --once /new_position geometry_msgs/Pose "{position: {x: 1.0, y: 0
 # Move 1 meter to the left
 ros2 topic pub --once /new_position geometry_msgs/Pose "{position: {x: 0.0, y: 1.0}}"
 
-# Move to diagonal position
+# Move to a diagonal position
 ros2 topic pub --once /new_position geometry_msgs/Pose "{position: {x: 0.5, y: 0.5}}"
 ```
 
-Watch RViz to verify the robot reaches each goal and stops within tolerance.
+Watch RViz to confirm the robot reaches each goal and stops within tolerance.
 
-### Tasks 2 & 3 - Figure of Eight with Wall Point Detection
+### Tasks 2 and 3: figure-eight with wall-point detection
 
 Start the figure-eight trajectory:
 ```bash
 ros2 launch r7021e_bringup lab1.launch.py sim:=true trajectory:=true rviz:=true
 ```
 
-The robot will wait 3 seconds, then trace a figure-8 pattern for 2 laps. Verify wall point detection:
+The robot waits 3 seconds, then traces the figure eight for 2 laps. Check wall-point
+detection with:
 ```bash
 ros2 topic echo /closest_wall_point
 ```
 
-### Task 4 - Wall Following
+### Task 4: wall following
 
-Start wall following:
 ```bash
 ros2 launch r7021e_bringup lab1.launch.py sim:=true mode:=wall_following rviz:=true
 ```
 
-The robot should locate the nearest wall, maintain 0.5m distance, navigate corners, and complete a full loop.
+The robot should find the nearest wall, hold roughly 0.5 m off it, turn at corners,
+and close the loop.
 
-## Recording Rosbags
+## Recording rosbags
 
-### Task 1 Recording
+### Task 1
 ```bash
 ros2 bag record -o bags/task1-position /odom /cmd_vel /scan /new_position /tf /tf_static
 ```
 
-### Tasks 2 & 3 Recording
+### Tasks 2 and 3
 ```bash
 ros2 bag record -o bags/task2-eight /odom /cmd_vel /scan /new_position /tf /tf_static
 ```
 
-### Task 4 Recording
+### Task 4
 ```bash
 ros2 bag record -o bags/task4-wall /odom /cmd_vel /scan /tf /tf_static
 ```
 
-### Verify Bag Contents
+### Verifying a bag
 ```bash
 ros2 bag info bags/<the bag>
 ```
 
-Ensure all required topics are present: `/odom`, `/cmd_vel`, `/scan`, `/new_position`, `/tf`, `/tf_static`.
+Make sure all the required topics are present: `/odom`, `/cmd_vel`, `/scan`,
+`/new_position`, `/tf`, `/tf_static`.
 
-## Recording the Video and Trajectory Plots for the Report
+## Recording the video and trajectory plots for the report
 
 Two scripts in `scripts/` do this. One-time setup on a new machine (no sudo needed):
 
@@ -154,9 +160,9 @@ video). WebM plays in any modern browser or video player; convert it if your
 submission requires a specific container.
 
 Why a screen capture and not `ffmpeg -f x11grab`: x11grab captures a fixed screen
-region from the (possibly composited) root window, which returns a black frame on
-a compositing desktop. The script captures the RViz window by its X window ID
-instead, which does not have that problem.
+region from the (possibly composited) root window, which returns a black frame on a
+compositing desktop. The script captures the RViz window by its X window ID instead,
+which doesn't have that problem.
 
 **Trajectory plots** -- the robot's actual path against the commanded/provided one,
 from a recorded bag:
@@ -166,11 +172,11 @@ python3 scripts/plot_trajectory.py bags/task1-position -o task1_trajectory.png
 python3 scripts/plot_trajectory.py bags/task2-eight -o task2_trajectory.png
 ```
 
-Works for both a handful of discrete terminal setpoints (task 1, plotted as goal
-markers) and a continuously-published path (task 2's figure eight, plotted as a
-line) -- it tells the two apart by counting distinct setpoints, not messages.
+Works for both a handful of discrete terminal setpoints (Task 1, plotted as goal
+markers) and a continuously published path (Task 2's figure eight, plotted as a
+line). It tells the two apart by counting distinct setpoints, not messages.
 
-## Block Diagram
+## Block diagram
 
 ```
 ROS 2 System
@@ -178,7 +184,7 @@ ROS 2 System
 │                                                     │
 │  ┌──────────────┐         ┌──────────────┐          │
 │  │   Sensors    │         │   Setpoints  │          │
-│  │              │         │              │          │ 
+│  │              │         │              │          │
 │  │  /odom       │         │ /new_position│          │
 │  │  (Odometry)  │         │  (Terminal   │          │
 │  │              │         │   or traj)   │          │
@@ -189,66 +195,66 @@ ROS 2 System
 │  │         controller_node                  │       │
 │  │                                          │       │
 │  │  • Subscribe: /odom, /new_position       │       │
-│  │  • Timer: 20 Hz control loop             │       │ 
-│  │  • NID Controller                        │       │
+│  │  • Timer: 20 Hz control loop             │       │
+│  │  • NID controller                        │       │
 │  │  • Publish: /cmd_vel (TwistStamped)      │       │
 │  └──────────────────┬───────────────────────┘       │
 │                     │                               │
 │                     ▼                               │
 │  ┌──────────────────────────────────────────┐       │
-│  │      TurtleBot3 (Physical/Sim)           │       │
+│  │      TurtleBot3 (physical/sim)           │       │
 │  │                                          │       │
 │  │  • Subscribe: /cmd_vel                   │       │
 │  │  • Publish: /odom, /scan                 │       │
 │  │  • Wheel encoders + IMU                  │       │
-│  │  • LDS-01/LDS-02 Lidar                   │       │
+│  │  • LDS-01/LDS-02 lidar                   │       │
 │  └──────────────────────────────────────────┘       │
 │                                                     │
-│  Parallel Processing:                               │
+│  Running alongside:                                 │
 │  ┌──────────────────┐    ┌────────────────────┐     │
 │  │ trajectory_node  │    │ scan_monitor_node  │     │
 │  │                  │    │                    │     │
 │  │ • Publish:       │    │ • Subscribe: /scan │     │
 │  │   /new_position  │    │ • Publish:         │     │
-│  │   (Figure-8)     │    │   /closest_wall_   │     │
+│  │   (figure-8)     │    │   /closest_wall_   │     │
 │  │                  │    │     point          │     │
 │  └──────────────────┘    └────────────────────┘     │
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
 
-### Control Loop Detail
+### Control loop detail
 
 ```
-Goal Position (x_goal, y_goal)
+Goal position (x_goal, y_goal)
         │
         ▼
 ┌────────────────────┐
-│  Error Calculation │
-│  Δx = x_goal - x   │
-│  Δy = y_goal - y   │
+│  Error calculation │
+│  Δx = x_goal - x_p │
+│  Δy = y_goal - y_p │
 └─────────┬──────────┘
           │
           ▼
 ┌────────────────────┐
-│   NID Transform    │
+│   NID transform    │
 │                    │
-│  1. Transform to   │
-│     offset point   │
+│  1. Track offset   │
+│     point P        │
 │     (L ahead)      │
 │                    │
-│  2. Linear control │
-│     v_offset =     │
-│     k_p * distance │
+│  2. Proportional   │
+│     control on P:  │
+│     u = k_p * e    │
 │                    │
-│  3. Inverse NID    │
-│     v, ω from      │
-│     v_offset       │
+│  3. Invert to get  │
+│     v, omega from  │
+│     u_x, u_y       │
 └─────────┬──────────┘
           │
           ▼
 ┌────────────────────┐
-│  Velocity Limits   │
+│  Velocity limits   │
 │  Clamp to:         │
 │  v_max = 0.22 m/s  │
 │  ω_max = 2.84 rad/s│
@@ -258,106 +264,77 @@ Goal Position (x_goal, y_goal)
     Publish /cmd_vel
 ```
 
-## Dynamic Model
+## Dynamic model
 
-### Unicycle Model (Kinematic)
+### Unicycle model (kinematic)
 
-State variables: `x, y` (position), `θ` (heading)
-Control inputs: `v` (linear velocity), `ω` (angular velocity)
+State: `x, y` (position), `theta` (heading). Inputs: `v` (linear velocity), `omega`
+(angular velocity).
 
-Kinematic equations:
 ```
-ẋ = v * cos(θ)
-ẏ = v * sin(θ)  
-θ̇ = ω
-```
-
-Non-holonomic constraint:
-```
-ẋ * sin(θ) - ẏ * cos(θ) = 0
+x_dot = v * cos(theta)
+y_dot = v * sin(theta)
+theta_dot = omega
 ```
 
-### NID Transformation
-
-Offset point (controlled point):
+Non-holonomic constraint (no sideways velocity in the body frame):
 ```
-x_offset = x + L * cos(θ)
-y_offset = y + L * sin(θ)
+x_dot * sin(theta) - y_dot * cos(theta) = 0
 ```
 
-Where `L = 0.10 m` is the NID offset parameter.
+This is a kinematic model: no mass, no inertia, no wheel slip, so it assumes the
+robot reaches a commanded velocity instantly. At 0.22 m/s on a robot this size,
+that's a reasonable simplification for a first control lab.
 
-Transformed dynamics (linearized around offset point):
-```
-ẋ_offset = v * cos(θ) - L * ω * sin(θ)
-ẏ_offset = v * sin(θ) + L * ω * cos(θ)
-```
+### NID transform
 
-Control law (proportional):
+Offset point P, a fixed distance `L` ahead of the robot's wheel axle:
 ```
-v_offset = k_p * sqrt((x_goal - x_offset)² + (y_goal - y_offset)²)
-```
-
-Inverse transform (robot commands from offset control):
-```
-v = v_offset * cos(θ)
-ω = (v_offset / L) * sin(θ)
+x_p = x + L * cos(theta)
+y_p = y + L * sin(theta)
 ```
 
-### Physical Parameters
+Turning the robot sweeps P sideways at a rate proportional to `omega` and `L`, so P
+behaves like a holonomic point that a plain proportional controller can drive.
+
+Outer loop, proportional control on P's position error:
+```
+u_x = k_p * (x_goal - x_p)
+u_y = k_p * (y_goal - y_p)
+```
+
+Inverting the transform gives the two robot inputs from the desired velocity of P:
+```
+v     =  u_x * cos(theta) + u_y * sin(theta)
+omega = (-u_x * sin(theta) + u_y * cos(theta)) / L
+```
+
+`v` is the component of the demand along the current heading; `omega` is the
+perpendicular component, divided by `L`. As `L` approaches zero the demanded `omega`
+grows without bound, which is the algebra confirming the transform stops working
+once P returns to the robot's own centre.
+
+### Choosing L
+
+Small `L` demands a large `omega` for a small lateral error, since the demand is
+divided by `L`. At `L = 0.10 m` and a demand capped at 0.22 m/s, the largest `omega`
+the transform can ever ask for is `0.22 / 0.10 = 2.2 rad/s`, comfortably inside the
+robot's 2.84 rad/s limit. A larger `L` gives more headroom on `omega`, but moves P
+further from the robot's actual centre, so convergence of P takes longer to show up
+as convergence of the physical robot.
+
+### Physical parameters
 
 - Wheel radius: `r = 0.033 m`
 - Wheel separation: `d = 0.160 m`
 - Max linear velocity: `v_max = 0.22 m/s`
-- Max angular velocity: `ω_max = 2.84 rad/s`
+- Max angular velocity: `omega_max = 2.84 rad/s`
 - NID offset: `L = 0.10 m`
 - Control gain: `k_p = 0.8`
 
-## NID Explanation
+## Running on the physical robot
 
-### What NID Solves
-
-The unicycle model is non-holonomic. The robot cannot move sideways. This makes direct position control hard because you cannot independently control x and y with just v and ω.
-
-NID solves this by controlling a virtual point L meters ahead of the robot's axle. This turns the non-holonomic system into a holonomic one around the offset point, so we can use simple linear control.
-
-### Visual Explanation
-
-```
-Robot at position (x, y) with heading θ:
-     ↑
-     │  θ
-     │
-     ●────→ (offset point)
-    L
-     
-The offset point is L meters ahead of the robot.
-When we control this point to follow a straight line,
-the robot naturally follows a curved path that tracks the line.
-```
-
-### Why L Matters
-
-Small L means the offset point is close to the robot. The transform then demands high ω for small lateral errors, which can saturate the angular velocity limit.
-
-Large L puts the offset point far ahead. Tracking errors at the robot center become large, and the robot may overshoot goals.
-
-With L = 0.10 m and v_max = 0.22 m/s, the maximum demanded ω is 0.22 / 0.10 = 2.2 rad/s. This is within the robot's 2.84 rad/s limit.
-
-### Control Law
-
-The proportional control law on the offset point is straightforward:
-
-```
-error = distance(offset_point, goal)
-v_offset = k_p * error
-```
-
-The offset point behaves like a holonomic point that can move in any direction. The actual robot follows the non-holonomic constraints.
-
-## Running on Physical Robot
-
-### Lab Day Setup
+### Lab day setup
 
 1. Connect to the robot:
 ```bash
@@ -369,126 +346,102 @@ ssh turtle@192.168.50.<number x 10>
 ros2 launch turtlebot3_bringup robot.launch.py
 ```
 
-3. Set domain ID in each terminal:
+3. Set the domain ID in each terminal:
 ```bash
 export ROS_DOMAIN_ID=34  # for turtle4
 ```
 
-4. Launch your controller (from your laptop):
+4. Launch the controller (from your laptop):
 ```bash
 ros2 launch r7021e_bringup lab1.launch.py use_sim_time:=false domain_id:=34
 ```
 
-### Critical Lab Day Checklist
+### Critical lab-day checklist
 
-**Step 1: Verify message types**
+**Step 1: verify message types**
 ```bash
 ros2 topic info /cmd_vel -v
 ```
-Both ends should show `geometry_msgs/msg/TwistStamped`. A mismatch means the robot won't move.
+Both ends should show `geometry_msgs/msg/TwistStamped`. A mismatch means the robot
+won't move, and it won't log an error either.
 
-**Step 2: Check parameters**
+**Step 2: check parameters**
 ```bash
 ros2 param get /controller_node robot.max_linear_velocity
 ```
-Should return 0.22. If it returns a different value, parameter files didn't load.
+Should return 0.22. A different value means the parameter files didn't load.
 
-**Step 3: Verify robot limits**
-Read the actual max_linear_velocity from the robot's turtlebot3_node before quoting 0.22 in the report. Firmware revisions may differ.
+**Step 3: verify the robot's actual limits**
+Read `max_linear_velocity` off the robot's own `turtlebot3_node` before quoting 0.22
+in the report. Firmware revisions have shipped different values.
 
-**Step 4: Run this before every simulation launch, no exceptions -- not only when something looks wrong**
+**Step 4: run this before every simulation launch, no exceptions, not only when
+something looks wrong.**
 
-Ctrl-C stops `ros2 launch` and its ROS nodes cleanly, but the `gz sim` server and GUI it started do not die with it. Confirmed, not occasional: it happens on every run, every time.
+Ctrl-C stops `ros2 launch` and its ROS nodes cleanly, but the `gz sim` server and GUI
+it started do not die with it. Confirmed, not occasional: it happens on every run.
 
 ```bash
 ps aux | grep -E "gzserver|gzclient|gz sim|ros2 launch|rviz2|robot_state_publisher" | grep -v grep
 ```
-If anything shows up, `kill -9` the PIDs it lists, then rerun the command and confirm the output is empty, before launching anything new. A leftover `gz sim` process keeps running on its own clock and keeps publishing `/tf`, `/odom` and `/scan`. Several of these at once, each at a different simulated time, produces `TF_OLD_DATA` warnings in RViz and a robot that appears to jump between positions, with every node logging as if nothing is wrong.
 
-## Common Issues and Solutions
+If anything shows up, `kill -9` the PIDs it lists, then rerun the command and
+confirm the output is empty before launching anything new. A leftover `gz sim`
+process keeps running on its own clock and keeps publishing `/tf`, `/odom` and
+`/scan`. Several of these at once, each at a different simulated time, is what
+produces `TF_OLD_DATA` warnings in RViz and a robot that appears to jump between
+positions, with every node logging as if nothing is wrong.
+
+## Common issues and solutions
 
 ### Robot doesn't move
-- Check `/cmd_vel` message type match
-- Verify ROS_DOMAIN_ID is set correctly
-- Ensure parameter files loaded
+- Check the `/cmd_vel` message type match
+- Verify `ROS_DOMAIN_ID` is set correctly
+- Confirm the parameter files loaded
 
 ### Parameters not loading
-- Check that `config/` symlink exists in r7021e_bringup
-- Verify YAML files are in the repository root `config/`
+- Check that `r7021e_bringup/config/` has the expected yaml files
 - Confirm you sourced the workspace after building
 
 ### Lidar returns invalid ranges
-- Check range gating in robot.yaml (0.12 m to 3.5 m)
+- Check the range gating in `robot.yaml` (0.12 m to 3.5 m)
 - Verify the lidar is actually running
-- Check if the robot is in open space with no walls
+- Check whether the robot is in open space with no walls in range
 
 ### Loop never closes
-- Robot may start too far from walls
-- Check loop_min_distance parameter (2.0 m)
+- The robot may start too far from a wall
+- Check the `loop_min_distance` parameter (2.0 m)
 - Verify the robot actually finds a wall to follow
 
 ### Simulation looks glitchy, robot jumps between positions
-- Almost always stray `gz sim` processes from a previous run that was never cleanly killed. See checklist step 4 above.
+- Almost always stray `gz sim` processes from a previous run that was never cleanly
+  killed. See checklist step 4 above.
 
-## Key ROS Topics
+## Key ROS topics
 
-- `/odom` - Robot odometry (nav_msgs/Odometry)
-- `/cmd_vel` - Velocity commands (geometry_msgs/TwistStamped)
-- `/new_position` - Position setpoints (geometry_msgs/Pose)
-- `/scan` - Lidar data (sensor_msgs/LaserScan)
-- `/closest_wall_point` - Nearest wall point (geometry_msgs/PointStamped)
+- `/odom` -- robot odometry (`nav_msgs/Odometry`)
+- `/cmd_vel` -- velocity commands (`geometry_msgs/TwistStamped`)
+- `/new_position` -- position setpoints (`geometry_msgs/Pose`)
+- `/scan` -- lidar data (`sensor_msgs/LaserScan`)
+- `/closest_wall_point` -- nearest wall point (`geometry_msgs/PointStamped`)
 
-## Closed: the Video Can Now Show the Goal
+## Closed: the video can now show the goal
 
-The assignment requires the video to show the current goal at every instant. `/new_position` is a bare `geometry_msgs/Pose` with no header and no frame, so RViz had no display that could draw one directly, and the topic name and type are fixed by the course so the message itself couldn't change.
+The assignment requires the video to show the current goal at every instant.
+`/new_position` is a bare `geometry_msgs/Pose` with no header and no frame, so RViz
+had no display that could draw one directly, and the topic name and type are fixed
+by the course, so the message itself couldn't change.
 
-`goal_marker_node` subscribes `/new_position` and republishes it as a `visualization_msgs/Marker` (a green sphere) on `/goal_marker`, in the `odom` frame. `lab1.launch.py` starts it unconditionally alongside the other nodes, and `rviz/lab1.rviz` already has a Marker display on that topic, so it shows up with no extra setup.
+`goal_marker_node` subscribes `/new_position` and republishes it as a
+`visualization_msgs/Marker` (a green sphere) on `/goal_marker`, in the `odom` frame.
+`lab1.launch.py` starts it unconditionally alongside the other nodes, and
+`rviz/lab1.rviz` already has a Marker display on that topic, so it shows up with no
+extra setup.
 
-Everything the video needs is in `rviz/lab1.rviz`: current position, the path so far as an odometry trail, the laser scan, and now the current goal.
+Everything the video needs is now in `rviz/lab1.rviz`: current position, the path so
+far as an odometry trail, the laser scan, and the current goal.
 
-## Assessment Questions and Answers
-
-### What is NID and why is it needed?
-
-NID (Near Identity Diffeomorphism) is a coordinate transformation that linearizes the non-holonomic unicycle model. The robot cannot move sideways because of the non-holonomic constraint, so direct position control is difficult. NID transforms the problem into controlling a point L meters ahead of the robot. This point behaves like a holonomic system that we can control with simple proportional control.
-
-### How does the offset parameter L affect performance?
-
-Small L values demand high angular velocities for small lateral errors. This can saturate the robot's ω limit. Large L values cause the robot center to track the goal with large offsets, which can lead to overshooting. The chosen L = 0.10 m balances these trade-offs. At v_max = 0.22 m/s, the maximum demanded ω is 2.2 rad/s, which stays within the robot's 2.84 rad/s limit.
-
-### What happens if you increase k_p?
-
-Higher k_p makes the controller more aggressive. This reduces settling time but increases the risk of overshoot and saturation. At k_p = 0.8, a 1 m error demands 0.8 m/s. This saturates at 0.22 m/s until the error falls below 0.275 m. Higher k_p would saturate longer and risk overshoot.
-
-### Why use TwistStamped instead of Twist?
-
-TwistStamped includes a header with frame_id and timestamp. This matters for tf transforms and time synchronization. A Twist publisher against a TwistStamped subscriber fails silently. Nothing logs, but the robot does not move because the endpoints never connect.
-
-### How does wall following detect corners?
-
-The wall follower uses a state machine with three states. In the acquiring state, the robot turns toward the nearest wall. In the following state, it maintains distance using proportional control. In the cornering state, it stops and turns when a front obstacle appears. Two lidar beams fit the wall as a line, which gives both distance and angle information.
-
-### What happens if the lidar sees no walls?
-
-If every beam is outside the valid range (0.12 to 3.5 m), the scan_monitor_node logs a warning and does not publish a closest wall point. The wall follower then enters the acquiring state and turns toward the nearest valid beam.
-
-### Why is the control rate 20 Hz?
-
-20 Hz is faster than the robot's mechanical response but slower than the lidar (5-10 Hz). This ensures the control loop never waits on sensor data it cannot use, while still being fast enough for effective control.
-
-### How does the system handle odometry timeouts?
-
-If no odometry arrives for 0.5 seconds, the controller stops commanding. It does not steer on stale pose data. This prevents the robot from executing commands based on where it was half a second ago.
-
-### What happens if you change the goal_defines parameter?
-
-The goal_defines parameter switches between two interpretations. In offset_point mode, the setpoint is where the NID point should end up. The NID closed loop stays exactly linear, but the robot center settles L meters behind the goal. In robot_centre mode, the setpoint is where the robot center should end up. The goal shifts forward by L, so the center converges to the commanded point, but the loop loses exact linearity.
-
-### How does the figure-eight trajectory work?
-
-The trajectory node publishes a Gerono lemniscate. The equations are x(s) = centre_x + width * sin(s) and y(s) = centre_y + height * sin(2s), where s = 2π * (elapsed / lap_period). The double frequency in y creates the figure-8 crossing. The node publishes the setpoint at 20 Hz, so the controller gets a fresh goal on every control tick.
-
-## Quick Verification
+## Quick verification
 
 Before your lab session, verify:
 
@@ -509,13 +462,14 @@ ros2 param get /controller_node robot.max_linear_velocity
 ps aux | grep -E "gzserver|gzclient|gz sim|ros2 launch|rviz2|robot_state_publisher" | grep -v grep
 ```
 
-## Important Notes
+## Important notes
 
-- Always check the /cmd_vel message type first. Mismatched types fail silently.
+- Always check the `/cmd_vel` message type first. Mismatched types fail silently.
 - The domain ID must be set correctly for multi-robot environments.
-- Parameter files load in order. robot.yaml loads first, then node-specific files.
+- Parameter files load in order: `robot.yaml` first, then each node's own file.
 - Record rosbags with all required topics before leaving the lab.
-- Verify bag contents with ros2 bag info after recording.
+- Verify bag contents with `ros2 bag info` after recording.
 - The physical robot may have different limits than the documented 0.22 m/s.
-- TwistStamped headers must be stamped with the node clock for tf to work correctly.
-- Before every simulation launch, not just when something looks wrong: check for and kill stray processes from a previous run (see the Lab Day Checklist above). Ctrl-C does not clean up `gz sim` on its own.
+- Before every simulation launch, not just when something looks wrong: check for and
+  kill stray processes from a previous run (see the lab day checklist above). Ctrl-C
+  does not clean up `gz sim` on its own.
