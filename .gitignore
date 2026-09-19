@@ -1,0 +1,17 @@
+# ROS 2 build output, live workspace only.
+/lab-files/ros2_ws/build/
+/lab-files/ros2_ws/install/
+/lab-files/ros2_ws/log/
+__pycache__/
+*.pyc
+
+# rosbags. Large, binary, regenerable.
+/lab-files/ros2_ws/bags/*
+!/lab-files/ros2_ws/bags/.gitkeep
+
+# editor and OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

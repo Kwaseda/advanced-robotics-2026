@@ -1,0 +1,44 @@
+# Figure of eight setpoint generator. Publishes a moving goal on /new_position.
+#
+# The trajectory node publishes setpoints and the controller chases them, rather
+# than generating the path inside the controller, so /new_position stays the single
+# control entry point for any setpoint source.
+
+/trajectory_node:
+  ros__parameters:
+    # Gerono lemniscate, the figure of eight that fits in a box:
+    #   x(s) = centre_x + width  * sin(s)
+    #   y(s) = centre_y + height * sin(2s),   s = 2*pi * (elapsed / lap_period)
+    # The double frequency in y crosses the path over itself at the centre.
+
+    # Half width in x and half height in y, metres. The eight spans 2*width by
+    # 2*height (2.0 m by 1.0 m), which clears the walled world with room to spare.
+    width: 1.0
+    height: 0.5
+
+    # Centre of the eight, metres, in the odometry frame. Zero: the robot and
+    # odometry both start at the origin.
+    centre_x: 0.0
+    centre_y: 0.0
+
+    # Seconds per lap. At width/height above, the path is 6.097 m long, so 50 s gives
+    # a mean setpoint speed of 0.122 m/s, a peak path speed of 0.175 m/s (80% of the
+    # 0.22 limit) and a peak path turn rate of 0.40 rad/s (14% of the 2.84 limit) --
+    # both with headroom, which is the task 2 criterion: commanded velocity never
+    # saturating.
+    #
+    # The turn rate the path asks for is a floor, not the controller's peak: NID
+    # divides the lateral part of the demand by L, so the commanded omega is larger
+    # than the path's own curvature whenever the robot is off the path.
+    lap_period: 50.0
+
+    # Laps before the node stops advancing and holds the final point.
+    laps: 2
+
+    # How often the setpoint is republished, seconds. 20 Hz, matching the control
+    # period, so the controller always has a fresh goal.
+    publish_period: 0.05
+
+    # Seconds the setpoint holds still at the start point before the lap begins,
+    # giving the controller time to drive the robot onto the path first.
+    start_delay: 3.0
