@@ -60,6 +60,11 @@ the controller:
   `/new_position` the single entry point into the controller regardless of where the
   setpoint comes from, and it makes the current goal a recorded topic rather than a
   value that only exists inside the controller's own state.
+- `goal_marker_node` republishes `/new_position` as a `visualization_msgs/Marker` on
+  `/goal_marker`, since `/new_position` has no header and RViz has no display that
+  can draw a bare `Pose` directly. Same reasoning as `scan_monitor_node`: the
+  control loop has no use for a drawable marker, so it doesn't belong in a control
+  node.
 
 `controller_node` and `wall_follower_node` both publish to `/cmd_vel`, so exactly one
 of them runs at a time -- selected by the launch file's `mode` argument rather than
@@ -107,7 +112,6 @@ start pose, not that the robot has.
 - `goal_defines` (`offset_point` vs `robot_centre` in `controller.yaml`): affects
   where the position-tracking error is measured from. See the NID section of
   `lab1-guide.md`.
-- The `/new_position` video-visualisation gap. See `lab1-guide.md`.
 - Tracking lag on the figure-eight (NID offset plus proportional lag against a moving
   setpoint) is visible on the trajectory plot even though it isn't an explicit task 2
   acceptance criterion.

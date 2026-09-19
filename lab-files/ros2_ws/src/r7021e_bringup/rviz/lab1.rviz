@@ -2,17 +2,17 @@
 # without rebuilding the view under time pressure.
 #
 # What the assignment demands the video shows at every instant: the current position,
-# the path taken so far, the current goal, and the laser scan. Three of those four are
-# below. The fourth is a known gap, written down rather than hidden:
+# the path taken so far, the current goal, and the laser scan. All four are below.
 #
-#   current position   Odometry display, the arrow.
-#   path so far        the same Odometry display with Keep set to 5000. At 20 Hz that
-#                      is over four minutes of trail, longer than the two laps take.
-#                      A nav_msgs/Path would draw better, and nothing publishes one.
-#   laser scan         LaserScan display, 30 s decay so walls persist as the robot moves.
-#   closest wall point   PointStamped, the task 3 quantity, visible while it is recorded.
-#   current goal       NOT SHOWN. /new_position is a bare geometry_msgs/Pose with no
-#                      header, and RViz has no display for one. See the README.
+#   current position    Odometry display, the arrow.
+#   path so far         the same Odometry display with Keep set to 5000. At 20 Hz that
+#                       is over four minutes of trail, longer than the two laps take.
+#                       A nav_msgs/Path would draw better, and nothing publishes one.
+#   laser scan          LaserScan display, 30 s decay so walls persist as the robot moves.
+#   closest wall point  PointStamped, the task 3 quantity, visible while it is recorded.
+#   current goal        Marker display on /goal_marker, published by goal_marker_node
+#                       from /new_position, which has no header of its own and no
+#                       display RViz can draw directly. See goal_marker_node.py.
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
@@ -86,6 +86,14 @@ Visualization Manager:
       Alpha: 1
       Radius: 0.06
       History Length: 1
+    - Class: rviz_default_plugins/Marker
+      Name: Goal marker
+      Enabled: true
+      Topic:
+        Value: /goal_marker
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
   Global Options:
     Fixed Frame: odom
     Background Color: 48; 48; 48

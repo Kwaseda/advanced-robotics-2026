@@ -111,25 +111,19 @@ ros2 bag info bags/<the bag>
 running `scan_monitor_node` against a replay. Adding it costs nothing and saves that
 step, which is a judgement call rather than a requirement.
 
-## Known gap: the video cannot show the goal yet
+## Closed: the video can now show the goal
 
-The assignment requires the video to show the current goal at every instant. It cannot
-today, and this is written down rather than discovered in week 12.
+The assignment requires the video to show the current goal at every instant.
+`/new_position` is a bare `geometry_msgs/Pose` with no header and no frame, so RViz
+had no display that could draw one directly, and the topic name and type are fixed
+by the course so the message itself couldn't change.
 
-`/new_position` is a bare `geometry_msgs/Pose`. It has no header, so it has no frame
-and no timestamp, and RViz has no display that can draw one. The topic name and type
-are fixed by the course, so the message cannot simply be changed to `PoseStamped`.
+Option 1 was taken: `goal_marker_node` subscribes `/new_position` and republishes it
+as a `visualization_msgs/Marker` (a green sphere) on `/goal_marker`, in the `odom`
+frame. `lab1.launch.py` starts it unconditionally alongside the other nodes, and
+`rviz/lab1.rviz` already has a Marker display on that topic, so it shows up with no
+extra setup. Five nodes now, where decision D3 named four -- the same honest
+"visualisation is its own node" rule `scan_monitor_node` already follows.
 
-Three ways out, none of them chosen yet, because the choice belongs to Dominic:
-
-1. A small visualisation node that subscribes `/new_position` and republishes it as a
-   `PoseStamped` or a `Marker` for RViz. It is the writer rule "visualisation is its
-   own node" applied honestly, and it makes five nodes where decision D3 says four.
-2. Draw the goal in post, from the bag, with a plotting script rather than in RViz.
-   The assignment says the video is generated in RViz, so this probably does not
-   satisfy it.
-3. Ask whether a goal marker is required in the video or whether the trajectory plot
-   in the report covers it.
-
-Everything else the video needs is in `rviz/lab1.rviz` and works: current position, the
-path so far as an odometry trail, and the laser scan.
+Everything the video needs is in `rviz/lab1.rviz`: current position, the path so far
+as an odometry trail, the laser scan, and now the current goal.

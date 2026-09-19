@@ -6,7 +6,8 @@
   <description>
     Lab 1 control nodes for R7021E 2026: closed loop position tracking with a Near
     Identity Diffeomorphism, a figure of eight setpoint generator, the closest wall
-    point from the laser scan, and wall following until the loop closes.
+    point from the laser scan, wall following until the loop closes, and an RViz
+    marker for the current goal.
   </description>
   <maintainer email="domadd-2@student.ltu.se">Dominic Addo</maintainer>
   <license>MIT</license>
@@ -16,6 +17,7 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <test_depend>python3-pytest</test_depend>
 

@@ -132,45 +132,45 @@ Ensure all required topics are present: `/odom`, `/cmd_vel`, `/scan`, `/new_posi
 ```
 ROS 2 System
 ├─────────────────────────────────────────────────────┐
-│                                                      │
-│  ┌──────────────┐         ┌──────────────┐         │
-│  │   Sensors    │         │   Setpoints  │         │
-│  │              │         │              │         │
-│  │  /odom       │         │ /new_position│         │
-│  │  (Odometry)  │         │  (Terminal   │         │
-│  │              │         │   or traj    │         │
-│  └──────┬───────┘         └──────┬───────┘         │
-│         │                        │                 │
-│         ▼                        ▼                 │
-│  ┌──────────────────────────────────────────┐    │
-│  │         controller_node                  │    │
-│  │                                          │    │
-│  │  • Subscribe: /odom, /new_position       │    │
-│  │  • Timer: 20 Hz control loop             │    │
-│  │  • NID Controller                        │    │
-│  │  • Publish: /cmd_vel (TwistStamped)      │    │
-│  └──────────────────┬───────────────────────┘    │
-│                     │                            │
-│                     ▼                            │
-│  ┌──────────────────────────────────────────┐    │
-│  │      TurtleBot3 (Physical/Sim)           │    │
-│  │                                          │    │
-│  │  • Subscribe: /cmd_vel                    │    │
-│  │  • Publish: /odom, /scan                  │    │
-│  │  • Wheel encoders + IMU                   │    │
-│  │  • LDS-01/LDS-02 Lidar                   │    │
-│  └──────────────────────────────────────────┘    │
-│                                                      │
+│                                                     │
+│  ┌──────────────┐         ┌──────────────┐          │
+│  │   Sensors    │         │   Setpoints  │          │
+│  │              │         │              │          │ 
+│  │  /odom       │         │ /new_position│          │
+│  │  (Odometry)  │         │  (Terminal   │          │
+│  │              │         │   or traj)   │          │
+│  └──────┬───────┘         └──────┬───────┘          │
+│         │                        │                  │
+│         ▼                        ▼                  │
+│  ┌──────────────────────────────────────────┐       │
+│  │         controller_node                  │       │
+│  │                                          │       │
+│  │  • Subscribe: /odom, /new_position       │       │
+│  │  • Timer: 20 Hz control loop             │       │ 
+│  │  • NID Controller                        │       │
+│  │  • Publish: /cmd_vel (TwistStamped)      │       │
+│  └──────────────────┬───────────────────────┘       │
+│                     │                               │
+│                     ▼                               │
+│  ┌──────────────────────────────────────────┐       │
+│  │      TurtleBot3 (Physical/Sim)           │       │
+│  │                                          │       │
+│  │  • Subscribe: /cmd_vel                   │       │
+│  │  • Publish: /odom, /scan                 │       │
+│  │  • Wheel encoders + IMU                  │       │
+│  │  • LDS-01/LDS-02 Lidar                   │       │
+│  └──────────────────────────────────────────┘       │
+│                                                     │
 │  Parallel Processing:                               │
-│  ┌──────────────────┐    ┌──────────────────┐     │
-│  │ trajectory_node  │    │ scan_monitor_node │     │
-│  │                  │    │                  │     │
-│  │ • Publish:       │    │ • Subscribe: /scan│     │
-│  │   /new_position  │    │ • Publish:        │     │
-│  │   (Figure-8)     │    │   /closest_wall_  │     │
-│  │                  │    │     point         │     │
-│  └──────────────────┘    └──────────────────┘     │
-│                                                      │
+│  ┌──────────────────┐    ┌────────────────────┐     │
+│  │ trajectory_node  │    │ scan_monitor_node  │     │
+│  │                  │    │                    │     │
+│  │ • Publish:       │    │ • Subscribe: /scan │     │
+│  │   /new_position  │    │ • Publish:         │     │
+│  │   (Figure-8)     │    │   /closest_wall_   │     │
+│  │                  │    │     point          │     │
+│  └──────────────────┘    └────────────────────┘     │
+│                                                     │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -180,36 +180,36 @@ ROS 2 System
 Goal Position (x_goal, y_goal)
         │
         ▼
-┌───────────────────┐
-│  Error Calculation│
-│  Δx = x_goal - x  │
-│  Δy = y_goal - y  │
-└─────────┬─────────┘
+┌────────────────────┐
+│  Error Calculation │
+│  Δx = x_goal - x   │
+│  Δy = y_goal - y   │
+└─────────┬──────────┘
           │
           ▼
-┌───────────────────┐
-│   NID Transform   │
-│                   │
-│  1. Transform to  │
-│     offset point  │
-│     (L ahead)     │
-│                   │
-│  2. Linear control│
-│     v_offset =    │
-│     k_p * distance│
-│                   │
-│  3. Inverse NID   │
-│     v, ω from     │
-│     v_offset      │
-└─────────┬─────────┘
+┌────────────────────┐
+│   NID Transform    │
+│                    │
+│  1. Transform to   │
+│     offset point   │
+│     (L ahead)      │
+│                    │
+│  2. Linear control │
+│     v_offset =     │
+│     k_p * distance │
+│                    │
+│  3. Inverse NID    │
+│     v, ω from      │
+│     v_offset       │
+└─────────┬──────────┘
           │
           ▼
-┌───────────────────┐
-│  Velocity Limits  │
-│  Clamp to:        │
-│  v_max = 0.22 m/s │
+┌────────────────────┐
+│  Velocity Limits   │
+│  Clamp to:         │
+│  v_max = 0.22 m/s  │
 │  ω_max = 2.84 rad/s│
-└─────────┬─────────┘
+└─────────┬──────────┘
           │
           ▼
     Publish /cmd_vel
@@ -395,19 +395,13 @@ If anything shows up, `kill -9` the PIDs it lists, then rerun the command and co
 - `/scan` - Lidar data (sensor_msgs/LaserScan)
 - `/closest_wall_point` - Nearest wall point (geometry_msgs/PointStamped)
 
-## Known Gap: the Video Cannot Show the Goal Yet
+## Closed: the Video Can Now Show the Goal
 
-The assignment requires the video to show the current goal at every instant. It cannot today.
+The assignment requires the video to show the current goal at every instant. `/new_position` is a bare `geometry_msgs/Pose` with no header and no frame, so RViz had no display that could draw one directly, and the topic name and type are fixed by the course so the message itself couldn't change.
 
-`/new_position` is a bare `geometry_msgs/Pose`. It has no header, so it has no frame and no timestamp, and RViz has no display that can draw one directly. The topic name and type are fixed by the course, so the message cannot simply be changed to `PoseStamped`.
+`goal_marker_node` subscribes `/new_position` and republishes it as a `visualization_msgs/Marker` (a green sphere) on `/goal_marker`, in the `odom` frame. `lab1.launch.py` starts it unconditionally alongside the other nodes, and `rviz/lab1.rviz` already has a Marker display on that topic, so it shows up with no extra setup.
 
-Three ways out, not yet chosen:
-
-1. A small visualisation node that subscribes `/new_position` and republishes it as a `PoseStamped` or a `Marker` for RViz.
-2. Draw the goal in post, from the bag, with a plotting script rather than in RViz. The assignment says the video is generated in RViz, so this probably does not satisfy it.
-3. Ask whether a goal marker is required in the video or whether the trajectory plot in the report covers it.
-
-Everything else the video needs is in `rviz/lab1.rviz` and works: current position, the path so far as an odometry trail, and the laser scan.
+Everything the video needs is in `rviz/lab1.rviz`: current position, the path so far as an odometry trail, the laser scan, and now the current goal.
 
 ## Assessment Questions and Answers
 

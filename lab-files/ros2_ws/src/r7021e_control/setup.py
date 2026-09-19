@@ -23,6 +23,7 @@ setup(
             'trajectory_node = r7021e_control.trajectory_node:main',
             'scan_monitor_node = r7021e_control.scan_monitor_node:main',
             'wall_follower_node = r7021e_control.wall_follower_node:main',
+            'goal_marker_node = r7021e_control.goal_marker_node:main',
         ],
     },
 )

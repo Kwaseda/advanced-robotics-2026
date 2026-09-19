@@ -130,6 +130,12 @@ def generate_launch_description():
             package='r7021e_control', executable='scan_monitor_node',
             name='scan_monitor_node', output='screen',
             parameters=parameters('scan_monitor.yaml')),
+        # Redraws /new_position as a Marker for RViz. Runs unconditionally --
+        # harmless in wall_following mode, since nothing publishes /new_position then.
+        Node(
+            package='r7021e_control', executable='goal_marker_node',
+            name='goal_marker_node', output='screen',
+            parameters=[{'use_sim_time': use_sim_time}]),
     ]
 
     rviz = Node(
