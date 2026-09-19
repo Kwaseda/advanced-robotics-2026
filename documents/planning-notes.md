@@ -107,11 +107,23 @@ drifts, which is why the wall follower's loop closure explicitly does not claim 
 a true loop closure -- it detects that the odometry estimate has returned to the
 start pose, not that the robot has.
 
+## Decided
+
+- `goal_defines`: staying with `offset_point` (the default). NID's entire value is
+  the exactly-linear closed loop on the offset point; switching to `robot_centre`
+  would satisfy the raw 0.05 m number at the robot's physical centre but give up the
+  property the theory was taught for. The centre's 0.148 m distance from the goal
+  under `offset_point` is reported and explained in the report (`L + goal_tolerance`,
+  derived in the NID section of `lab1-guide.md`), not treated as a failure to hide.
+
+- Tracking lag on the figure-eight (0.231 m mean: 0.10 m NID offset plus ~0.153 m of
+  proportional lag against the moving setpoint, `setpoint speed / k_p`): left as-is,
+  explained in the report rather than tuned away. Task 2's acceptance criterion says
+  nothing about tracking error, and both cures (raising `k_p_position`, or adding
+  feedforward) are real trade-offs, not free fixes -- see `lab1-guide.md`. Not a
+  closed question forever: worth revisiting if the physical-robot sessions surface a
+  reason to, but that is a decision for then, not now.
+
 ## Open items
 
-- `goal_defines` (`offset_point` vs `robot_centre` in `controller.yaml`): affects
-  where the position-tracking error is measured from. See the NID section of
-  `lab1-guide.md`.
-- Tracking lag on the figure-eight (NID offset plus proportional lag against a moving
-  setpoint) is visible on the trajectory plot even though it isn't an explicit task 2
-  acceptance criterion.
+None currently.

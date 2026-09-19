@@ -1,18 +1,14 @@
-# RViz configuration for Lab 1, saved so the graded video can be produced from a bag
-# without rebuilding the view under time pressure.
+# RViz configuration for Lab 1.
 #
-# What the assignment demands the video shows at every instant: the current position,
-# the path taken so far, the current goal, and the laser scan. All four are below.
+# What the video needs to show at every instant: current position, path so far,
+# current goal, and the laser scan.
 #
 #   current position    Odometry display, the arrow.
-#   path so far         the same Odometry display with Keep set to 5000. At 20 Hz that
-#                       is over four minutes of trail, longer than the two laps take.
-#                       A nav_msgs/Path would draw better, and nothing publishes one.
+#   path so far         the same Odometry display with Keep set to 5000 -- over
+#                       four minutes of trail at 20 Hz, longer than the two laps take.
 #   laser scan          LaserScan display, 30 s decay so walls persist as the robot moves.
-#   closest wall point  PointStamped, the task 3 quantity, visible while it is recorded.
-#   current goal        Marker display on /goal_marker, published by goal_marker_node
-#                       from /new_position, which has no header of its own and no
-#                       display RViz can draw directly. See goal_marker_node.py.
+#   closest wall point  PointStamped, the task 3 quantity.
+#   current goal        Marker display on /goal_marker, published by goal_marker_node.
 Panels:
   - Class: rviz_common/Displays
     Name: Displays

@@ -127,6 +127,49 @@ ros2 bag info bags/<the bag>
 
 Ensure all required topics are present: `/odom`, `/cmd_vel`, `/scan`, `/new_position`, `/tf`, `/tf_static`.
 
+## Recording the Video and Trajectory Plots for the Report
+
+Two scripts in `scripts/` do this. One-time setup on a new machine (no sudo needed):
+
+```bash
+pip install --user python-xlib
+```
+
+**Video** -- records the bag and a screen capture of RViz together, in one pass, so
+you don't need to replay the bag separately just to make the video:
+
+```bash
+# terminal 1: start the sim as usual, with rviz:=true
+ros2 launch r7021e_bringup lab1.launch.py sim:=true rviz:=true
+
+# terminal 2, once RViz is up
+source /opt/ros/jazzy/setup.bash && source install/setup.bash
+python3 scripts/record_demo.py bags/task1-position
+
+# terminal 3: run the task (publish goals, etc.), then Ctrl-C terminal 2 when done
+```
+
+This produces `bags/task1-position/` (the bag) and `bags/task1-position.webm` (the
+video). WebM plays in any modern browser or video player; convert it if your
+submission requires a specific container.
+
+Why a screen capture and not `ffmpeg -f x11grab`: x11grab captures a fixed screen
+region from the (possibly composited) root window, which returns a black frame on
+a compositing desktop. The script captures the RViz window by its X window ID
+instead, which does not have that problem.
+
+**Trajectory plots** -- the robot's actual path against the commanded/provided one,
+from a recorded bag:
+
+```bash
+python3 scripts/plot_trajectory.py bags/task1-position -o task1_trajectory.png
+python3 scripts/plot_trajectory.py bags/task2-eight -o task2_trajectory.png
+```
+
+Works for both a handful of discrete terminal setpoints (task 1, plotted as goal
+markers) and a continuously-published path (task 2's figure eight, plotted as a
+line) -- it tells the two apart by counting distinct setpoints, not messages.
+
 ## Block Diagram
 
 ```

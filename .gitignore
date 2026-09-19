@@ -5,9 +5,10 @@
 __pycache__/
 *.pyc
 
-# rosbags. Large, binary, regenerable.
 /lab-files/ros2_ws/bags/*
 !/lab-files/ros2_ws/bags/.gitkeep
+!/lab-files/ros2_ws/bags/*.png
+!/lab-files/ros2_ws/bags/*.webm
 
 # editor and OS noise
 .vscode/

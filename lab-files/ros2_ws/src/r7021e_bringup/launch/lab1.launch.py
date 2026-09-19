@@ -4,24 +4,22 @@
     ros2 launch r7021e_bringup lab1.launch.py trajectory:=true     tasks 2 and 3, the eight
     ros2 launch r7021e_bringup lab1.launch.py mode:=wall_following task 4
 
-Arguments, all of them things that change between a desk and a lab bench:
+Arguments:
 
     mode          position_control | wall_following. Which node drives /cmd_vel.
     trajectory    start the figure of eight generator. Ignored in wall_following mode.
     domain_id     ROS_DOMAIN_ID for every node started here. The lab dictates 3<robot
-                  number>, so turtle4 is 34. A flag, never an edit to a file.
-    use_sim_time  true in Gazebo, false on the robot. Set once, here, for every node.
+                  number>, so turtle4 is 34.
+    use_sim_time  true in Gazebo, false on the robot.
     rviz          start RViz2 with the saved configuration.
     sim           include the Gazebo world. Off by default.
-    world_launch  which world. Defaults to turtlebot3_dqn_stage1.launch.py, the stock
-                  walled square with the robot at its centre. See the note below on
-                  box.launch.py, which the tutorial names and this installation lacks.
+    world_launch  which world. Defaults to turtlebot3_dqn_stage1.launch.py -- see the
+                  note below.
     config_dir    where the parameter files are. Defaults to this package's share.
 
-Why mode is an argument and not two launch files: controller_node and
-wall_follower_node both publish to /cmd_vel, and two publishers on one topic do not
-error. They interleave, and the robot does something that looks like a tuning problem
-and is not. Making the choice an argument means it cannot be made by accident.
+mode is an argument rather than two launch files because controller_node and
+wall_follower_node both publish to /cmd_vel, and two publishers on one topic
+interleave rather than erroring.
 """
 
 import os
@@ -72,9 +70,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'world_launch', default_value='turtlebot3_dqn_stage1.launch.py',
             description='launch file inside turtlebot3_gazebo that starts the world. '
-                        'The tutorial names box.launch.py, which ships with the course '
-                        'virtual machine and not with the upstream package. See the note '
-                        'further down this file'),
+                        'See the note further down this file'),
         DeclareLaunchArgument(
             'config_dir', default_value=os.path.join(share, 'config'),
             description='directory holding robot.yaml and the per-node parameter files'),
@@ -84,19 +80,13 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     config_dir = LaunchConfiguration('config_dir')
 
-    # ROS_DOMAIN_ID is set for the processes this file starts. It does not reach the
-    # shell the launch was typed in, so a "ros2 topic list" in another terminal still
-    # needs its own export. Step one of the lab-day checklist in the package README.
+    # Set for the processes this file starts only -- a second terminal needs its own
+    # export for "ros2 topic list" etc. to see the same domain.
     domain = SetEnvironmentVariable('ROS_DOMAIN_ID', LaunchConfiguration('domain_id'))
 
     def parameters(node_yaml):
-        """robot.yaml first, then the node's own file.
-
-        Order matters. Later files win on a repeated key, so a node file could
-        override a physical limit if it declared one. None of them do, and none of
-        them should: config/robot.yaml owns those numbers. Loading it first and
-        listing it on every node is what makes one definition serve four nodes.
-        """
+        """robot.yaml first, then the node's own file, so one definition of the
+        physical limits serves every node."""
         return [
             PathJoinSubstitution([config_dir, 'robot.yaml']),
             PathJoinSubstitution([config_dir, node_yaml]),
@@ -123,9 +113,8 @@ def generate_launch_description():
             package='r7021e_control', executable='wall_follower_node',
             name='wall_follower_node', output='screen',
             parameters=parameters('wall_follower.yaml'), condition=following),
-        # The scan monitor runs in both modes. Task 3 wants the closest wall point
-        # plotted while the eight runs, and the wall following segments have to be
-        # marked on the same plot, so it has to be recording during task 4 as well.
+        # Runs in both modes: task 3 wants the closest wall point during the eight,
+        # and the same plot needs task 4's segments marked on it too.
         Node(
             package='r7021e_control', executable='scan_monitor_node',
             name='scan_monitor_node', output='screen',
@@ -145,33 +134,17 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rviz')),
     )
 
-    # The simulator.
-    #
-    # The tutorial, slide 23, says to launch box.launch.py from turtlebot3_gazebo, and
-    # describes the result as "the robot in the center with red-colored walls around
-    # it". That file does not exist in this installation and is not in the upstream
-    # ROBOTIS turtlebot3_simulations jazzy branch, which is what is built in
-    # ~/turtlebot3_ws. The tutorial is written for the course virtual machine, which
-    # ships its own checkout.
-    #
-    # The stock world that matches the description is turtlebot3_dqn_stage1: a ground
-    # plane plus turtlebot3_dqn_world, which is a 5 m square of walls whose inner faces
-    # sit at +/- 2.35 m, with the robot spawned at the origin. Read out of the model
-    # SDF on 2026-09-08. The walls are white rather than red, which is the only
-    # difference that matters and it is cosmetic.
-    #
-    # world_launch is therefore an argument, not a constant, so switching to
-    # box.launch.py is a flag on the command line if the lab machines turn out to have
-    # it.
-    # ASSUMPTION: turtlebot3_dqn_stage1 is an acceptable stand-in for the box world.
-    
+    # The simulator. The tutorial names box.launch.py, which is not in the upstream
+    # turtlebot3_simulations jazzy branch and was never supplied for this course.
+    # turtlebot3_dqn_stage1 is the stand-in: a ground plane plus turtlebot3_dqn_world,
+    # a 5 m square of walls with inner faces at +/- 2.35 m, robot spawned at the
+    # origin. world_launch stays an argument so a different world is a flag, not an
+    # edit to this file.
     world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            # FindPackageShare, not get_package_share_directory. The function would
-            # look the package up while this file is being read, so a machine without
-            # the simulator could not launch the nodes at all. The substitution is
-            # resolved only when the action runs, which the condition below stops it
-            # from doing.
+            # FindPackageShare, not get_package_share_directory: resolved only when
+            # this action runs, so a machine without the simulator can still launch
+            # the nodes when sim:=false.
             PathJoinSubstitution([
                 FindPackageShare('turtlebot3_gazebo'), 'launch',
                 LaunchConfiguration('world_launch'),
