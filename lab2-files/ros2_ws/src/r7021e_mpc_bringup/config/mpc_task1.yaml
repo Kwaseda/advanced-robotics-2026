@@ -1,0 +1,17 @@
+# Lab 2 task 1: setpoint tracking. Overlay on mpc.yaml.
+#
+# Almost empty by design: task 1 is mpc.yaml's own defaults, and this file exists so the
+# launch file can load mpc_task<N>.yaml for every N without a special case. The boundary
+# is restated because it is the constraint the task is named for, and task 1b (a setpoint
+# outside it) is only meaningful if the number is visible where the task is.
+#
+# Suggested runs:
+#   inside  (x: 0.8, y: 0.5)   reaches the goal
+#   outside (x: 1.5, y: 0.0)   drives to the boundary and stops there, reporting the
+#                              solver status. Not a bug: the goal is outside the feasible
+#                              set, so the closest feasible point is the boundary itself.
+
+/mpc_node:
+  ros__parameters:
+    boundary_x: [-1.0, 1.0]
+    boundary_y: [-1.0, 1.0]

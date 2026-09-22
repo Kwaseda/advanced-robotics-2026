@@ -1,14 +1,22 @@
-# ROS 2 build output, live workspace only.
-/lab-files/ros2_ws/build/
-/lab-files/ros2_ws/install/
-/lab-files/ros2_ws/log/
+# ROS 2 build output, live workspaces only.
+/lab1-files/ros2_ws/build/
+/lab1-files/ros2_ws/install/
+/lab1-files/ros2_ws/log/
+/lab2-files/ros2_ws/build/
+/lab2-files/ros2_ws/install/
+/lab2-files/ros2_ws/log/
 __pycache__/
 *.pyc
 
-/lab-files/ros2_ws/bags/*
-!/lab-files/ros2_ws/bags/.gitkeep
-!/lab-files/ros2_ws/bags/*.png
-!/lab-files/ros2_ws/bags/*.webm
+/lab1-files/ros2_ws/bags/*
+!/lab1-files/ros2_ws/bags/.gitkeep
+!/lab1-files/ros2_ws/bags/*.png
+!/lab1-files/ros2_ws/bags/*.webm
+
+/lab2-files/ros2_ws/bags/*
+!/lab2-files/ros2_ws/bags/.gitkeep
+!/lab2-files/ros2_ws/bags/*.png
+!/lab2-files/ros2_ws/bags/*.webm
 
 # editor and OS noise
 .vscode/

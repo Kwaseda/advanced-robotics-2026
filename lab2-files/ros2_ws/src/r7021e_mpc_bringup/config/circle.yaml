@@ -1,0 +1,38 @@
+# Circular trajectory generator, Lab 2 task 4. Same node as a figure of eight, different
+# shape parameter.
+
+/trajectory_node:
+  ros__parameters:
+    shape: circle
+
+    # 0.8 m radius is a 5.027 m lap, inside the +/- 1.5 m box in mpc_task4.yaml and inside
+    # the dqn_stage1 world's walls at +/- 2.35 m.
+    radius: 0.8
+
+    # Centre in the odometry frame. The origin, because the robot spawns there. Note that
+    # phase zero is therefore at (0.8, 0.0), one radius away.
+    centre_x: 0.0
+    centre_y: 0.0
+
+    # 60 s over 5.027 m is a constant 0.084 m/s and a constant 0.105 rad/s, 38 and 13
+    # percent of the two bounds. The headroom is what the controller spends detouring
+    # around the obstacle and catching back up to a reference that did not wait.
+    lap_period: 60.0
+
+    # Two laps. One completed lap can be luck.
+    laps: 2
+
+    publish_period: 0.05
+
+    # Longer than a figure of eight needs, because the robot starts at the origin and the
+    # circle starts 0.8 m away.
+    start_delay: 8.0
+
+    # Publishes where the setpoint will be at each step of the controller's horizon, so
+    # the MPC plans against the reference's future rather than against one point held
+    # still. reference_horizon and reference_step must match the controller's n_horizon
+    # and t_step, or index k means a different amount of time to each of them.
+    publish_reference_path: true
+    reference_horizon: 20
+    reference_step: 0.1
+    reference_frame_id: odom

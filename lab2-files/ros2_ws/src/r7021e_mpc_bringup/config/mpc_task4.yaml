@@ -1,0 +1,36 @@
+# Lab 2 task 4: circular trajectory tracking with one static obstacle. Overlay on mpc.yaml.
+#
+# Runs with trajectory_node loading circle.yaml, which publishes both /new_position and
+# /reference_path. This is the only task where the horizon is filled with the reference's
+# future rather than one point held constant, and the only task where that matters.
+
+/mpc_node:
+  ros__parameters:
+    # The circle has radius 0.8 m about the origin, so it touches +/- 0.8 on both axes.
+    # The box has to clear that plus the detour around the obstacle.
+    boundary_x: [-1.5, 1.5]
+    boundary_y: [-1.5, 1.5]
+
+    # Just inside the reference circle, at the top of the lap. Its inflated radius of
+    # 0.225 m overlaps the circle, so the robot cannot both stay on the reference and
+    # respect the constraint: it bulges outward by about 45 mm and rejoins. That deviation
+    # is the result the plot exists to show.
+    #
+    # Inside the circle rather than on it or outside it. Centred on the reference, the
+    # reference itself is inside the keep-out zone and the robot is pinned between a hard
+    # constraint and a cost pulling it in. Outside the circle, passing it needs a 0.37 m
+    # excursion and the horizon only covers 0.44 m of travel, so the solver cannot see
+    # around it. Inside, the required detour is 45 mm and it solves immediately.
+    obstacle_x: [0.0]
+    obstacle_y: [0.62]
+    obstacle_radius: [0.12]
+
+    # Soft here, hard in tasks 2 and 3. Task 4 is the only task whose optimal path rides
+    # the obstacle constraint rather than passing it, and a hard constraint plus any
+    # actuation delay then puts the measured state a millimetre inside the keep-out zone,
+    # which makes the problem infeasible permanently. The penalty is four orders above the
+    # tracking weight, so the solver never trades clearance for tracking: with no
+    # perturbation it produces the same path as the hard constraint, and the slack it uses
+    # under delay comes out of the inflation margin rather than out of real clearance.
+    obstacle_soft: true
+    obstacle_penalty: 10000.0

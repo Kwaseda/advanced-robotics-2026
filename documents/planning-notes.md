@@ -1,9 +1,11 @@
-# Lab 1 Design Notes
+# Design Notes
 
-Design decisions behind the Lab 1 implementation, for reference alongside the code and
-`lab1-guide.md`.
+Design decisions behind the implementation, for reference alongside the code and the
+per-lab guides. Lab 1 first, then Lab 2.
 
-## Interface facts, fixed by the course
+## Lab 1
+
+### Interface facts, fixed by the course
 
 | Thing | Value | Note |
 |---|---|---|
@@ -14,7 +16,7 @@ Design decisions behind the Lab 1 implementation, for reference alongside the co
 | Domain ID | `3<robot number>` | e.g. turtle4 is 34, set from the launch file, not hardcoded |
 | Robot IP | `192.168.50.<number x 10>` | ssh as user `turtle` |
 
-## The four prerequisite tasks
+### The four prerequisite tasks
 
 1. Closed-loop position controller: subscribe odometry, publish command velocity,
    take setpoints from `/new_position`.
@@ -25,7 +27,7 @@ Design decisions behind the Lab 1 implementation, for reference alongside the co
 
 Plus: record rosbags of the relevant topics for each task.
 
-## Why NID (Near Identity Diffeomorphism)
+### Why NID (Near Identity Diffeomorphism)
 
 The unicycle model is non-holonomic: with two inputs (`v`, `omega`) and three states
 (`x`, `y`, `theta`), the robot cannot move sideways, so its own centre cannot be
@@ -37,7 +39,7 @@ tutorial names directly, and Lab 2's MPC controller sits behind the same
 `Controller` interface (`controller_base.py`), so the swap between labs is a matter
 of changing which class the launch file constructs, not a rewrite.
 
-## Package split
+### Package split
 
 Two packages:
 
@@ -71,7 +73,7 @@ of them runs at a time -- selected by the launch file's `mode` argument rather t
 left to whoever types the launch command, since two publishers on one topic interleave
 silently instead of erroring.
 
-## Physical limits
+### Physical limits
 
 TurtleBot3 Burger, from the ROBOTIS datasheet:
 
@@ -89,7 +91,7 @@ Worth double-checking against the exact robot on lab day: other TurtleBot3 model
 been known to differ from the datasheet. Read `max_linear_velocity` off the robot's
 own `turtlebot3_node` before quoting a number in the report.
 
-## TwistStamped, not Twist
+### TwistStamped, not Twist
 
 `/cmd_vel` on this course is `geometry_msgs/TwistStamped`, not the plain `Twist` used
 in older TurtleBot3 tutorials. A `Twist` publisher against a `TwistStamped`
@@ -97,7 +99,7 @@ subscriber does not error -- it simply never connects, so nothing logs and the r
 sits still. `ros2 topic info /cmd_vel -v` is the first thing to check on any run that
 isn't moving.
 
-## Reflection question: where does the physical robot's odometry come from
+### Reflection question: where does the physical robot's odometry come from
 
 Wheel encoders on the two Dynamixel servos, integrated by the OpenCR board,
 optionally fused with the onboard IMU. There is no external position sensing on a
@@ -107,7 +109,7 @@ drifts, which is why the wall follower's loop closure explicitly does not claim 
 a true loop closure -- it detects that the odometry estimate has returned to the
 start pose, not that the robot has.
 
-## Decided
+### Decided
 
 - `goal_defines`: staying with `offset_point` (the default). NID's entire value is
   the exactly-linear closed loop on the offset point; switching to `robot_centre`
@@ -124,6 +126,103 @@ start pose, not that the robot has.
   closed question forever: worth revisiting if the physical-robot sessions surface a
   reason to, but that is a decision for then, not now.
 
-## Open items
+### Open items
 
 None currently.
+
+
+## Lab 2
+
+Design decisions behind the MPC implementation, alongside `lab2-guide.md`. The
+measurements that justify each of them are in `lab2-report-notes.md`.
+
+### Why a separate package rather than a second controller in `r7021e_control`
+
+`controller_base.py` defines a `Controller` interface (`compute`, `reset`) that Lab 1
+wrote before a second controller existed, on the argument that a Lab 2 MPC would sit
+behind it. That argument held: `MPCController` implements the same interface unchanged,
+and `controller_base.py` is carried into Lab 2 rather than rewritten.
+
+Lab 2 still ships as its own package with its own node. The reason is delivery, not
+design: `lab2-files/` has to be downloadable and runnable on its own, and a shared
+controller node would drag NID, wall following and the scan monitor into a lab that does
+not use any of them. The package names differ from Lab 1's for the same reason, so both
+workspaces can be sourced at once without shadowing each other.
+
+### Package split, unchanged in principle from Lab 1
+
+- **r7021e_mpc** -- the control law and the nodes. `mpc_controller.py` is plain Python
+  with no ROS imports, so it is unit tested at a desk; `mpc_node.py` owns subscriptions,
+  the timer, the message types and the header, and nothing else.
+- **r7021e_mpc_bringup** -- launch file, parameter files, RViz configuration. No nodes.
+
+Parameter files are real files inside the package's own `config/`, not a symlink to a
+shared directory. A symlinked config directory can install empty, which builds clean and
+passes every unit test.
+
+### Why the solver runs on its own timer
+
+`mpc.make_step()` is called from a timer at `t_step`, never from the `/odom` callback. A
+solver called from a sensor callback runs at sensor rate rather than at its designed
+sample time, and the horizon then covers a different span of real time on every tick.
+
+`t_step` is one number serving both the prediction step and the control period, so the
+first predicted interval is exactly the interval the command is held for.
+
+### Why the setpoint is a time-varying parameter
+
+do-mpc compiles the horizon, the bounds and the obstacle set into an NLP at `setup()`
+time. A setpoint written as a constant in the objective would mean rebuilding and
+recompiling that NLP every time the goal changed, which takes seconds. As a `_tvp` it is
+a number handed to an already-built solver, which takes microseconds.
+
+It also makes trajectory tracking possible. The horizon can be filled with where the
+reference *will* be at each future step rather than where it is now, which is the
+difference between tracking a curve and lagging behind it.
+
+### Why `/reference_path` is a separate optional topic
+
+`/new_position` stays the single control entry point, exactly as in Lab 1, so a terminal
+setpoint, the trajectory generator and any later planner all drive the controller through
+the same message, and the current goal remains a recorded topic the marker node can draw.
+
+`/reference_path` carries the same goal's future over the horizon. Only an MPC can use
+it; a reactive controller ignores it. Making it a second topic rather than changing
+`/new_position` means nothing that consumed the setpoint before has to change.
+
+### Why obstacles are constraints and markers, not Gazebo bodies
+
+The lab asks for an obstacle avoidance constraint in the controller. Drawing the same
+numbers as RViz markers gives the video something to show without introducing a second
+source of truth that can silently disagree with the constraint, and it works unchanged on
+the real robot where there is no simulator to put a body in.
+
+Obstacle radii are inflated by the robot's footprint before reaching the solver, because
+the MPC model is a point. The inflation happens in one place, so the marker and the
+constraint are always the same circle.
+
+### Hard constraints, and the one place they are not
+
+Boundary and obstacle constraints are hard, matching the tutorial. Tasks 2 and 3 use hard
+obstacle constraints and both are verified in simulation.
+
+Task 4 uses a soft constraint with a high penalty, and this is the one design decision
+here that departs from the tutorial. A hard constraint is enforced at every horizon step
+including step zero, and step zero is the measured state, not a decision variable. If the
+measurement itself violates the constraint there is no input that satisfies the problem,
+and the controller stops permanently. That cannot happen when the optimal path passes an
+obstacle with margin, and it does happen when the optimal path rides the constraint
+boundary, which is what tracking a reference through an obstacle asks for.
+
+The penalty is four orders of magnitude above the tracking weight, so with nothing
+perturbing it the soft constraint produces the same path as the hard one to within a
+millimetre. The slack it uses under disturbance comes out of the footprint inflation
+margin rather than out of real clearance to the object.
+
+### Physical limits, and which bound binds
+
+The lab states `0 < v < 0.5` and `-0.8 < omega < 0.8`. The Burger does 0.22 m/s and
+2.84 rad/s. Both sets are declared as separate parameters and the node takes the tighter
+of each pair, rather than one number being edited to mean both. A model allowed to predict
+0.5 m/s on a robot that saturates at 0.22 plans a future the robot cannot reach, and every
+plan it makes is then wrong in the same direction without the controller finding out.

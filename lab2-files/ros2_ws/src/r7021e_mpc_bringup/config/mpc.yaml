@@ -1,0 +1,86 @@
+# Model Predictive Control, Lab 2. Base parameter file: task 1, setpoint tracking.
+#
+# Physical limits are not repeated here: they come from robot.yaml, which the launch file
+# loads first. The lab's own constraints are separate parameters under "lab." because both
+# sets apply at once and the tighter one binds.
+#
+# The task overlays (mpc_task1-4.yaml) load after this file and change only what differs.
+
+/mpc_node:
+  ros__parameters:
+    # Prediction step and the period of the control timer, one number for both, so the
+    # first predicted interval is exactly the interval the command is held for.
+    # 0.1 s rather than Lab 1's 0.05 s: with two obstacles the solve peaks near 45 ms,
+    # which would be 90 percent of a 50 ms budget, and a late solve degrades silently.
+    t_step: 0.1
+
+    # Prediction horizon in steps. 20 steps of 0.1 s is 2.0 s, which at the Burger's
+    # 0.22 m/s is only 0.44 m of travel. That distance, not the number of steps, is what
+    # decides whether the controller can see around an obstacle.
+    n_horizon: 20
+
+    # Stop distance. The solver never returns exactly zero, so without a tolerance the
+    # robot creeps against odometry noise indefinitely.
+    goal_tolerance: 0.05
+
+    # The lab's stated input constraints. The lower bound on vx is zero, not negative:
+    # the model cannot reverse, so a goal behind the robot means turning in place first.
+    lab:
+      min_linear_velocity: 0.0
+      max_linear_velocity: 0.5
+      max_angular_velocity: 0.8
+
+    # Boundary constraints, [lower, upper] metres, hard: a plan that leaves the box at any
+    # predicted step is rejected outright.
+    boundary_x: [-1.0, 1.0]
+    boundary_y: [-1.0, 1.0]
+
+    # Stage cost and terminal cost on squared position error. Equal, as in the tutorial.
+    # Without the terminal term nothing scores where the horizon ends, so the solver may
+    # return a plan still travelling fast past the goal.
+    q_position: 1.0
+    q_terminal: 1.0
+    # Penalty on the change in input between steps, two orders below the tracking weight:
+    # smoothing, not a competing objective.
+    r_input: 0.01
+
+    # Scenario-tree branching over uncertain model parameters. This model declares none,
+    # so anything above zero costs solve time and buys nothing.
+    n_robust: 0
+
+    # IPOPT prints an iteration table per solve; at 10 Hz that floods the log.
+    solver_verbose: false
+
+    # The MPC model is a point and the robot is not. The Burger's 178 by 138 mm footprint
+    # gives a circumscribing radius of about 0.112 m; 0.105 m is that rounded down.
+    # Without it the predicted point can sit legally on an obstacle's edge with half a
+    # TurtleBot inside it.
+    obstacle_inflation: 0.105
+
+    # Hard obstacle constraints by default, as in the tutorial. Tasks 2 and 3 use them.
+    #
+    # A hard constraint is enforced at every horizon step including step zero, and step
+    # zero is the measured state, not a decision variable. If the measurement itself
+    # violates the constraint there is no input that satisfies the problem, and the
+    # solver reports infeasible with no way back. That only matters when the optimal path
+    # rides the constraint boundary rather than passing it with margin, which is what
+    # task 4 does; see mpc_task4.yaml.
+    obstacle_soft: false
+    obstacle_penalty: 10000.0
+
+    # Task 1 has no obstacles. obstacle_x, obstacle_y and obstacle_radius are declared
+    # without defaults in the node so "none" is expressible by saying nothing.
+
+    # cmd_frame_id stamps /cmd_vel; odom_frame_id is what the RViz markers and the
+    # predicted path are drawn in.
+    cmd_frame_id: base_link
+    odom_frame_id: odom
+
+    # Steering on a pose half a second old is worse than not steering: the robot keeps
+    # executing the last command while the controller believes it is still where that
+    # command was computed for.
+    odom_timeout: 0.5
+
+    # A reference path older than this is ignored and the controller falls back to holding
+    # the current goal across the horizon.
+    reference_timeout: 1.0

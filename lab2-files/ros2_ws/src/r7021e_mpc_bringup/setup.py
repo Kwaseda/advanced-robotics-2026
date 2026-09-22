@@ -3,8 +3,11 @@ import os
 
 from setuptools import find_packages, setup
 
-package_name = 'r7021e_bringup'
+package_name = 'r7021e_mpc_bringup'
 
+# The parameter files are real files inside this package's own config/ directory, not a
+# symlink to a shared one. A shared directory reached by a symlink can silently install
+# empty, and no unit test notices: only a launch plus "ros2 param get" does.
 setup(
     name=package_name,
     version='0.1.0',
@@ -21,7 +24,9 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    description='R7021E launch files, parameters and RViz configuration',
+    maintainer='Dominic Addo',
+    maintainer_email='domadd-2@student.ltu.se',
+    description='R7021E Lab 2 launch files, parameters and RViz configuration',
     license='MIT',
     tests_require=['pytest'],
     entry_points={'console_scripts': []},

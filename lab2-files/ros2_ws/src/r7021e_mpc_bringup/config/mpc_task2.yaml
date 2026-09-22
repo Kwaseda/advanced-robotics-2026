@@ -1,0 +1,24 @@
+# Lab 2 task 2: one static obstacle. Overlay on mpc.yaml.
+
+/mpc_node:
+  ros__parameters:
+    # The tutorial's own note, "adjust the boundary constraints if necessary", applies
+    # here: at +/- 1.0 the boundary and the obstacle squeeze the corridor from both sides
+    # and the run demonstrates constraint conflict rather than obstacle avoidance.
+    boundary_x: [-2.0, 2.0]
+    boundary_y: [-2.0, 2.0]
+
+    # Close enough to the line from the origin to the goal that the robot cannot reach the
+    # goal without deviating, and 0.08 m off it rather than exactly on it. That offset
+    # matters: with the obstacle dead on the axis and the robot starting at theta = 0,
+    # going left and going right cost exactly the same, the gradient is zero, and the
+    # robot drives up to the keep-out boundary and stops. Every obstacle in the tutorial's
+    # examples is offset from the axis for the same reason.
+    #
+    # Radius is the physical obstacle; the solver and the RViz marker both use it inflated
+    # by obstacle_inflation, computed in one place.
+    obstacle_x: [0.75]
+    obstacle_y: [0.08]
+    obstacle_radius: [0.15]
+
+    # Suggested goal: (x: 1.5, y: 0.0)

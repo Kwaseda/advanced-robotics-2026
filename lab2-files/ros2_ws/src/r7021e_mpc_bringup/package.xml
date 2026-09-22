@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>r7021e_mpc_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Launch file, parameter files and RViz configuration for the Lab 2 MPC.
+  </description>
+  <maintainer email="domadd-2@student.ltu.se">Dominic Addo</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>r7021e_mpc</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
