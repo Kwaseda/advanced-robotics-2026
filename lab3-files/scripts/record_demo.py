@@ -66,9 +66,19 @@ import time
 # /mpc_obstacles and /reference_path only in Lab 2. Expect warnings for whichever half
 # is not running.
 BAG_TOPICS = [
-    '/odom', '/cmd_vel', '/scan', '/new_position', '/tf', '/tf_static',
-    '/goal_marker', '/closest_wall_point',
+    # Labs 1, 2 and 3 share one list. `ros2 bag record` warns about whichever
+    # topics are not running and records the rest, so one list serving three labs
+    # costs a few warnings and saves three lists drifting apart.
+    '/odom', '/cmd_vel', '/scan', '/tf', '/tf_static',
+    # Labs 1 and 2
+    '/new_position', '/goal_marker', '/closest_wall_point',
     '/mpc_prediction', '/mpc_obstacles', '/reference_path',
+    # Lab 3. /map and /frontiers are full occupancy grids at 1 Hz, so a maze run
+    # produces a much larger bag than either earlier lab, and the recorder's
+    # already slow shutdown gets slower with it. Budget for that in the session,
+    # and run `ros2 bag info` immediately afterwards to check duration and counts.
+    '/map', '/frontiers', '/path',
+    '/rrt_tree', '/frontier_goals', '/exploration_status',
 ]
 
 

@@ -26,7 +26,42 @@ Four tasks:
 | 3 | Two static obstacles at once |
 | 4 | Circular trajectory tracking while avoiding an obstacle |
 
-## One-time setup
+## One-time setup on a new machine
+
+### System packages
+
+```bash
+sudo apt install x11-utils gstreamer1.0-tools gstreamer1.0-plugins-base \
+                 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps \
+                 python3-xlib ros-jazzy-rviz2
+```
+
+| Package | Why |
+|---|---|
+| `x11-utils` | `xwininfo`, which `record_demo.py` uses to find the RViz window |
+| `gstreamer1.0-tools` | `gst-launch-1.0`, the screen recorder |
+| `gstreamer1.0-plugins-base` | `videoconvert` |
+| `gstreamer1.0-plugins-good` | `ximagesrc`, `vp8enc`, `webmmux`, the actual capture and encode |
+| `gstreamer1.0-plugins-base-apps` | `gst-discoverer-1.0`, for checking a recorded video |
+| `python3-xlib` | raising the RViz window before capture starts |
+| `ros-jazzy-rviz2` | already present in a desktop ROS install, listed for a bare one |
+
+Only the recording needs these. The controller itself runs without any of them.
+
+Check the GStreamer plugins are really present before a lab session rather than during
+one, because a missing plugin fails at the moment you press record:
+
+```bash
+gst-inspect-1.0 ximagesrc && gst-inspect-1.0 vp8enc && gst-inspect-1.0 webmmux
+```
+
+If `python3-xlib` is not available on your distribution, this works without sudo:
+
+```bash
+pip install --user --break-system-packages python-xlib
+```
+
+### Python packages
 
 `do-mpc` and `casadi` are pip packages, not ROS dependencies, so `rosdep` will not install
 them.
@@ -179,13 +214,73 @@ that saturates at 0.22 plans a future it cannot reach.
 
 ## Recording
 
+`record_demo.py` records the rosbag and a screen capture of RViz together, in one pass.
+It needs the system packages from the setup section above.
+
+Three terminals, in this order:
+
 ```bash
+# 1. the launch file, with RViz, started by you
+ros2 launch r7021e_mpc_bringup lab2.launch.py task:=2 sim:=true rviz:=true
+```
+
+```bash
+# 2. the recorder, once RViz is actually on screen
 python3 scripts/record_demo.py bags/task2-obstacle
 ```
 
-Records the bag and a screen capture of RViz together. Start the launch file yourself
-first, with `rviz:=true`, then run this in a second terminal and publish the goal in a
-third.
+```bash
+# 3. the task itself
+ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 1.5, y: 0.0, z: 0.0}}"
+```
+
+It writes the bag to `bags/task2-obstacle/` and the video to `bags/task2-obstacle.webm`.
+Task 4 needs no third terminal: the trajectory generator drives itself, so start the
+recorder and let the two laps run.
+
+### Stopping it, which is the part that needs care
+
+Press Ctrl-C **once** in terminal 2, then wait and do nothing else.
+
+`ros2 bag record` keeps writing after the interrupt, and on the development machine that
+took anywhere from 20 seconds to over three minutes for bags of only a few megabytes.
+That is the recorder, not a lost keypress: a signal sent straight to its own process ID
+was just as slow. The script waits for it and prints both file sizes when it is genuinely
+finished:
+
+```
+  video stopped after 0.1s
+  bag stopped after 84.3s
+
+  bag   bags/task2-obstacle/  2.9 MB
+  video bags/task2-obstacle.webm  0.6 MB
+
+Verify with:  ros2 bag info bags/task2-obstacle
+              gst-discoverer-1.0 bags/task2-obstacle.webm
+```
+
+A second Ctrl-C, or closing the terminal, truncates the bag, and `ros2 bag info` will
+still call the truncated file a valid bag. That is why the script ignores a second Ctrl-C.
+
+If it is still going after a few minutes, from another terminal:
+
+```bash
+pkill -TERM -f "ros2 bag record"
+```
+
+SIGTERM closed it cleanly in every test, writing its `metadata.yaml` and leaving a bag
+that `ros2 bag info` reads normally.
+
+### Always verify before you leave
+
+```bash
+ros2 bag info bags/task2-obstacle
+```
+
+Check `Duration` and `Messages` against the run you just did, and check that
+`/odom`, `/cmd_vel` and `/new_position` all have non-zero counts. A bag that came out
+longer than the run is harmless, the tail is just the robot sitting still. A bag that is
+much shorter is the one to re-record.
 
 Plotting, with the obstacles and boundary drawn from the same parameter file the
 controller loaded:

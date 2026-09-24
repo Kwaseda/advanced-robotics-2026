@@ -7,7 +7,6 @@
     Launch files, parameter files and the RViz configuration for R7021E 2026. Holds no
     nodes: it starts the ones in r7021e_control and decides which of them run together.
   </description>
-  <maintainer email="domadd-2@student.ltu.se">Dominic Addo</maintainer>
   <license>MIT</license>
 
   <exec_depend>launch</exec_depend>

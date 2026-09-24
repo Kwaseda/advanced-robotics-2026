@@ -1,0 +1,41 @@
+# TurtleBot3 Burger physical facts. One source of truth for the whole workspace.
+#
+# Nothing else in this repository redefines these numbers. Every node declares them
+# under the "robot." prefix and every launch file passes this file first, before the
+# per-node file, so a node can add parameters but cannot contradict these.
+#
+# The "/**" wildcard applies the block to every node that loads the file, which is
+# what makes one definition serve four nodes.
+#
+# Source: docs/lectures and the TurtleBot3 e-Manual, recorded in README.md and in
+# wiki/velocity-limits-burger.md. Last year's MPC used 0.55 m/s here, which is the
+# Waffle Pi figure, and every prediction it made on hardware was wrong in the same
+# direction because the command saturated at 0.22 and the model never knew.
+#
+# ASSUMPTION: the lab's Burgers ship the published 0.22 m/s and 2.84 rad/s limits.
+# CONFIRM BY: read max_linear_velocity off the robot's turtlebot3_node before quoting
+# either number in the report. Firmware revisions have shipped different values.
+
+/**:
+  ros__parameters:
+    robot:
+      # Actuator bounds. Every commanded velocity is clamped to these before publishing.
+      max_linear_velocity: 0.22     # m/s, Burger published limit
+      max_angular_velocity: 2.84    # rad/s, Burger published limit
+
+      # Drive geometry. Not used by the Lab 1 controller, which commands v and omega and
+      # lets OpenCR do the wheel conversion, but the report's dynamic model needs both
+      # and they belong with the other physical facts rather than in a slide.
+      wheel_radius: 0.033           # m
+      wheel_separation: 0.160       # m
+
+      # Footprint, metres, length by width by height. Used for clearance reasoning.
+      footprint_length: 0.178
+      footprint_width: 0.138
+
+      # LDS-01 / LDS-02 usable range. A beam outside this window is not a measurement.
+      # The lidar returns 0.0 or inf for beams that hit nothing or hit something closer
+      # than range_min, so a raw min() over the array returns 0.0 forever.
+      # See wiki/closest-wall-point.md.
+      scan_range_min: 0.12          # m
+      scan_range_max: 3.5           # m

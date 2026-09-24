@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 880" width="1120" height="880" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4d4d4d"/>
+    </marker>
+    <marker id="arrowThin" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6f6f6f"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="880" fill="#ffffff"/>
+
+  <text x="40" y="34" font-size="19" font-weight="bold" fill="#1a1a1a">R7021E Lab 3: node structure, autonomous exploration</text>
+
+  <!-- ================= row 1: robot, SLAM, frontier detector ================= -->
+
+  <rect x="40" y="60" width="280" height="72" rx="4" fill="#f8cecc" stroke="#b85450" stroke-width="1.5"/>
+  <text x="180" y="88" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a">TurtleBot3 Burger</text>
+  <text x="180" y="108" font-size="11.5" text-anchor="middle" fill="#3d3d3d">Gazebo maze, or hardware</text>
+  <text x="180" y="124" font-size="11.5" text-anchor="middle" fill="#3d3d3d">2D LiDAR, wheel odometry</text>
+
+  <rect x="420" y="60" width="260" height="72" rx="4" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.5"/>
+  <text x="550" y="88" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a">slam_toolbox</text>
+  <text x="550" y="108" font-size="11.5" text-anchor="middle" fill="#3d3d3d">given, async mapping</text>
+  <text x="550" y="124" font-size="11.5" text-anchor="middle" fill="#3d3d3d">0.05 m/cell, 1 Hz map</text>
+
+  <rect x="780" y="60" width="280" height="72" rx="4" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.5"/>
+  <text x="920" y="88" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a">frontier_detector_node</text>
+  <text x="920" y="108" font-size="11.5" text-anchor="middle" fill="#3d3d3d">given, unmodified</text>
+  <text x="920" y="124" font-size="11.5" text-anchor="middle" fill="#3d3d3d">free cell beside unknown = 100</text>
+
+  <line x1="320" y1="96" x2="412" y2="96" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="325" y="72" width="82" height="18" fill="#ffffff"/>
+  <text x="366" y="85" font-size="11" text-anchor="middle" fill="#1a1a1a">/scan  /odom</text>
+
+  <line x1="680" y1="96" x2="772" y2="96" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="694" y="72" width="44" height="18" fill="#ffffff"/>
+  <text x="716" y="85" font-size="11" text-anchor="middle" fill="#1a1a1a">/map</text>
+
+  <!-- ================= row 2: our node ================= -->
+
+  <rect x="300" y="210" width="760" height="430" rx="6" fill="#d5e8d4" stroke="#82b366" stroke-width="2"/>
+  <text x="320" y="238" font-size="15" font-weight="bold" fill="#1a1a1a">navigation_node</text>
+  <text x="446" y="238" font-size="12" fill="#3d3d3d">ours, the only file importing rclpy</text>
+
+  <line x1="550" y1="132" x2="550" y2="202" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="446" y="152" width="208" height="30" fill="#ffffff"/>
+  <text x="550" y="165" font-size="11" text-anchor="middle" fill="#1a1a1a">/map  (OccupancyGrid)</text>
+  <text x="550" y="179" font-size="11" text-anchor="middle" fill="#1a1a1a">tf: map to base_link</text>
+
+  <line x1="920" y1="132" x2="920" y2="202" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="852" y="158" width="136" height="18" fill="#ffffff"/>
+  <text x="920" y="171" font-size="11" text-anchor="middle" fill="#1a1a1a">/frontiers  (plural)</text>
+
+  <!-- inner modules -->
+
+  <rect x="330" y="262" width="230" height="122" rx="4" fill="#ffffff" stroke="#9673a6" stroke-width="1.4"/>
+  <text x="445" y="284" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a">grid.py</text>
+  <text x="445" y="304" font-size="11" text-anchor="middle" fill="#3d3d3d">one grid representation</text>
+  <text x="445" y="322" font-size="11" text-anchor="middle" fill="#3d3d3d">inflate 0.105 m, 3 cells</text>
+  <text x="445" y="340" font-size="11" text-anchor="middle" fill="#3d3d3d">occupied at 65 and above</text>
+  <text x="445" y="358" font-size="11" text-anchor="middle" fill="#3d3d3d">unknown stays traversable</text>
+  <text x="445" y="376" font-size="11" text-anchor="middle" fill="#3d3d3d">Task 3, by inflation</text>
+
+  <rect x="600" y="262" width="230" height="122" rx="4" fill="#ffffff" stroke="#9673a6" stroke-width="1.4"/>
+  <text x="715" y="284" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a">exploration_gain.py</text>
+  <text x="715" y="304" font-size="11" text-anchor="middle" fill="#3d3d3d">cluster frontiers, 5 to 100</text>
+  <text x="715" y="322" font-size="11" text-anchor="middle" fill="#3d3d3d">goal = centroid, else walk back</text>
+  <text x="715" y="340" font-size="11" text-anchor="middle" fill="#3d3d3d">I(p) within 0.75 m of goal</text>
+  <text x="715" y="358" font-size="11" text-anchor="middle" fill="#3d3d3d">H = sum d(p) minus 0.1 I(p)</text>
+  <text x="715" y="376" font-size="11" text-anchor="middle" fill="#3d3d3d">Task 4, pick the minimum</text>
+
+  <rect x="870" y="262" width="170" height="122" rx="4" fill="#ffffff" stroke="#9673a6" stroke-width="1.4"/>
+  <text x="955" y="284" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a">rrt_star.py</text>
+  <text x="955" y="304" font-size="11" text-anchor="middle" fill="#3d3d3d">sample, steer 0.3 m</text>
+  <text x="955" y="322" font-size="11" text-anchor="middle" fill="#3d3d3d">check along the line</text>
+  <text x="955" y="340" font-size="11" text-anchor="middle" fill="#3d3d3d">best parent, rewire 0.6 m</text>
+  <text x="955" y="358" font-size="11" text-anchor="middle" fill="#3d3d3d">shortest branch to goal</text>
+  <text x="955" y="376" font-size="11" text-anchor="middle" fill="#3d3d3d">Task 2</text>
+
+  <line x1="560" y1="323" x2="592" y2="323" stroke="#6f6f6f" stroke-width="1.4" marker-end="url(#arrowThin)"/>
+
+  <line x1="830" y1="302" x2="862" y2="302" stroke="#6f6f6f" stroke-width="1.4" marker-end="url(#arrowThin)"/>
+  <rect x="792" y="280" width="106" height="16" fill="#d5e8d4"/>
+  <text x="845" y="292" font-size="10.5" text-anchor="middle" fill="#1a1a1a">plan, once per candidate</text>
+
+  <line x1="862" y1="348" x2="830" y2="348" stroke="#6f6f6f" stroke-width="1.4" marker-end="url(#arrowThin)"/>
+  <rect x="806" y="356" width="90" height="16" fill="#d5e8d4"/>
+  <text x="851" y="368" font-size="10.5" text-anchor="middle" fill="#1a1a1a">path and its length</text>
+
+  <rect x="330" y="450" width="500" height="146" rx="4" fill="#ffffff" stroke="#9673a6" stroke-width="1.4"/>
+  <text x="580" y="472" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a">exploration loop, 1 Hz timer</text>
+  <text x="580" y="494" font-size="11" text-anchor="middle" fill="#3d3d3d">replan on arrival within 0.20 m, on stall, or on a path older than 20 s</text>
+  <text x="580" y="512" font-size="11" text-anchor="middle" fill="#3d3d3d">completion detected from tf, because the follower publishes no status</text>
+  <text x="580" y="530" font-size="11" text-anchor="middle" fill="#3d3d3d">hold the committed goal unless a rival beats it by 0.5</text>
+  <text x="580" y="548" font-size="11" text-anchor="middle" fill="#3d3d3d">stop after 10 consecutive cycles with no surviving cluster</text>
+  <text x="580" y="570" font-size="11" text-anchor="middle" fill="#3d3d3d">retire every goal reached or stalled on, then park at the robot's own pose</text>
+  <text x="580" y="588" font-size="11" text-anchor="middle" fill="#3d3d3d">Tasks 1 and 5</text>
+
+  <line x1="715" y1="384" x2="715" y2="442" stroke="#6f6f6f" stroke-width="1.4" marker-end="url(#arrowThin)"/>
+  <rect x="660" y="402" width="110" height="16" fill="#d5e8d4"/>
+  <text x="715" y="414" font-size="10.5" text-anchor="middle" fill="#1a1a1a">chosen goal and path</text>
+
+  <rect x="870" y="450" width="170" height="146" rx="4" fill="#ffffff" stroke="#9673a6" stroke-width="1.4"/>
+  <text x="955" y="472" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a">markers</text>
+  <text x="955" y="494" font-size="11" text-anchor="middle" fill="#3d3d3d">/rrt_tree</text>
+  <text x="955" y="512" font-size="11" text-anchor="middle" fill="#3d3d3d">/frontier_goals</text>
+  <text x="955" y="530" font-size="11" text-anchor="middle" fill="#3d3d3d">/exploration_status</text>
+  <text x="955" y="556" font-size="11" text-anchor="middle" fill="#3d3d3d">off on the robot,</text>
+  <text x="955" y="574" font-size="11" text-anchor="middle" fill="#3d3d3d">on in simulation</text>
+
+  <line x1="830" y1="523" x2="862" y2="523" stroke="#6f6f6f" stroke-width="1.4" marker-end="url(#arrowThin)"/>
+
+  <!-- ================= row 3: follower and RViz ================= -->
+
+  <rect x="300" y="720" width="300" height="72" rx="4" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.5"/>
+  <text x="450" y="748" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a">path_follower_node</text>
+  <text x="450" y="768" font-size="11.5" text-anchor="middle" fill="#3d3d3d">given, unmodified</text>
+  <text x="450" y="784" font-size="11.5" text-anchor="middle" fill="#3d3d3d">look-ahead 0.2 m, publishes only cmd_vel</text>
+
+  <rect x="880" y="720" width="180" height="72" rx="4" fill="#e6e6e6" stroke="#8c8c8c" stroke-width="1.5"/>
+  <text x="970" y="752" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a">RViz2</text>
+  <text x="970" y="772" font-size="11.5" text-anchor="middle" fill="#3d3d3d">and the recorded bag</text>
+
+  <line x1="450" y1="640" x2="450" y2="712" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="396" y="662" width="108" height="30" fill="#ffffff"/>
+  <text x="450" y="675" font-size="11" text-anchor="middle" fill="#1a1a1a">/path</text>
+  <text x="450" y="689" font-size="11" text-anchor="middle" fill="#1a1a1a">(nav_msgs/Path)</text>
+
+  <line x1="970" y1="640" x2="970" y2="712" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="922" y="668" width="96" height="18" fill="#ffffff"/>
+  <text x="970" y="681" font-size="11" text-anchor="middle" fill="#1a1a1a">marker topics</text>
+
+  <!-- feedback: cmd_vel back to the robot, down the far left, no crossings -->
+  <path d="M 300 756 H 90 V 140" fill="none" stroke="#4d4d4d" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="42" y="420" width="96" height="30" fill="#ffffff"/>
+  <text x="90" y="433" font-size="11" text-anchor="middle" fill="#1a1a1a">/cmd_vel</text>
+  <text x="90" y="447" font-size="11" text-anchor="middle" fill="#1a1a1a">(TwistStamped)</text>
+
+  <!-- ================= legend ================= -->
+
+  <rect x="40" y="806" width="16" height="16" rx="2" fill="#f8cecc" stroke="#b85450" stroke-width="1.2"/>
+  <text x="64" y="819" font-size="11.5" fill="#1a1a1a">robot or simulator</text>
+
+  <rect x="200" y="806" width="16" height="16" rx="2" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.2"/>
+  <text x="224" y="819" font-size="11.5" fill="#1a1a1a">provided by the course, unmodified</text>
+
+  <rect x="470" y="806" width="16" height="16" rx="2" fill="#d5e8d4" stroke="#82b366" stroke-width="1.2"/>
+  <text x="494" y="819" font-size="11.5" fill="#1a1a1a">written for this lab</text>
+
+  <rect x="640" y="806" width="16" height="16" rx="2" fill="#ffffff" stroke="#9673a6" stroke-width="1.2"/>
+  <text x="664" y="819" font-size="11.5" fill="#1a1a1a">plain Python, no ROS imports, unit tested at a desk</text>
+</svg>

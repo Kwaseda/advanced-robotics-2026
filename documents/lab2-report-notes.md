@@ -388,6 +388,52 @@ it, so the trajectory plot had no goal marker on it.
 Use `--times 6 --rate 2` instead, or any repeated publish. The fix costs three seconds and
 the failure is invisible until the plot is made.
 
+## 13. Recording pipeline, verified end to end
+
+`sim` 2026-09-22 and 2026-09-23. `scripts/record_demo.py` records the rosbag and a screen
+capture of RViz together, in one pass. Verified on task 2 and task 4.
+
+| Run | Bag | Video | Topics captured |
+|---|---|---|---|
+| Task 2 | 2.9 MiB, 34.2 s, 5008 msgs | 48.6 s, 1428x966 | all 9 live Lab 2 topics |
+| Task 4 | 41.7 MiB, 339 s, 69903 msgs | 99.1 s, 1428x966 | all 10, including `/reference_path` |
+
+A frame extracted from the task 2 video shows real RViz content: the laser-scan outline
+of the walls, the red obstacle cylinder, the robot, and the Lab 2 displays. The task 4
+bag replays into the same trajectory plot as the live run, with mean tracking error
+0.002 m and closest approach 0.224 m against the 0.225 m constraint.
+
+### The one operational problem, measured rather than guessed
+
+After Ctrl-C, `ros2 bag record` keeps writing for a long time: 20 s in one run, over
+200 s in several others, for bags of a few megabytes. Four candidate causes were ruled
+out by experiment:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| The signal never arrives | SIGINT sent straight to the recorder's own PID | Just as slow, 101 s |
+| SIGINT is inherited as ignored | Read `SigIgn`/`SigCgt` from `/proc/<pid>/status` | Not ignored; the recorder does catch SIGINT |
+| Too many topics | Full 11-topic list against a reduced 6-topic list | 200 s and 201 s, no difference |
+| Gazebo is responsible | Same recording with no simulator running | Still over 200 s |
+| Machine is saturated | `uptime`, `nproc`, `free` | 12 cores, load 1.0, 23 GB free |
+
+So it is the recorder, in this environment, and it is not something the lab code causes.
+
+What was done about it: `record_demo.py` now waits up to four minutes, prints both file
+sizes, warns explicitly if either recorder did not finish cleanly, and ignores a second
+Ctrl-C, because a second one truncates the bag and `ros2 bag info` still reports a
+truncated bag as valid. Before the fix the script exited with a `TimeoutExpired`
+traceback after 10 s, which on a lab day reads as a failed recording.
+
+No run ever produced a corrupt bag. Even the force-terminated task 4 bag wrote its
+`metadata.yaml` and reads normally. A bag longer than the run is harmless; the tail is the
+robot sitting still.
+
+Not verified: an interactive Ctrl-C in a real terminal. Every test here signalled a
+background process programmatically, which is a different path from a terminal signalling
+its whole foreground process group. CONFIRM BY: run one recording by hand and press
+Ctrl-C before relying on the timings above.
+
 ## 12. Verification, and what it does not cover
 
 `desk` The MPC test suite checks the constraint wiring
@@ -412,6 +458,5 @@ Not done, and the report must not claim otherwise:
 - The 17 mm boundary overshoot in task 1b and the 1 mm obstacle slack in task 4 are
   Gazebo's dynamics. Both will differ on hardware, probably in the direction of more
   overshoot, because a real Burger has more latency than the simulator.
-- No video capture yet. `scripts/record_demo.py` records a bag and a screen capture of
-  RViz together and its topic list covers the Lab 2 topics, but no recording has been
-  made for these runs.
+- Videos exist for tasks 2 and 4 only. Tasks 1, 1b and 3 have bags and plots but no
+  screen capture.

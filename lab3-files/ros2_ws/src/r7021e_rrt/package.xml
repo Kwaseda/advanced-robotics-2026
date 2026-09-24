@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>r7021e_rrt</name>
+  <version>0.1.0</version>
+  <description>
+    Lab 3 autonomous exploration for the TurtleBot3 Burger: an RRT* path planner and a
+    frontier-clustering exploration gain, plus the navigation loop that drives them.
+
+    Deliberately not named r7021e_exploration: that is the course-provided package, which
+    is installed alongside this one and supplies SLAM bring-up, the frontier detector and
+    the path follower.
+  </description>
+  <maintainer email="domadd-2@student.ltu.se">Dominic Addo</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2_ros</depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

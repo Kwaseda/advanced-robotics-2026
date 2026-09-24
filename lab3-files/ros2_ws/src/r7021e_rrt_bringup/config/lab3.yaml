@@ -1,0 +1,331 @@
+# Autonomous exploration, Lab 3. Parameters for navigation_node.
+#
+# Every number here has a reason next to it. Physical facts are not repeated: they come
+# from config/robot.yaml, which the launch file loads first. Where a number here is
+# derived from one there, the derivation is written out, because a derived constant with
+# no arithmetic beside it is a number nobody can check.
+#
+# Read them back off the running node before believing this file:
+#
+#   ros2 param get /navigation_node inflation_radius
+#   ros2 param get /navigation_node gain.radius
+#
+# A parameter directory that installs empty builds clean and launches clean. Only
+# `ros2 launch` plus `ros2 param get` catches it.
+
+/navigation_node:
+  ros__parameters:
+
+    # ---------------------------------------------------------------- interfaces
+
+    # The frontier detector publishes on `frontiers`, plural. The course template's
+    # navigation node declares `frontier`, singular, and exploration.launch.py carries
+    # no remapping, so as shipped the template's subscription never receives anything.
+    # Read from the course package's own source.
+    map_topic: 'map'
+    frontier_topic: 'frontiers'
+    path_topic: 'path'
+
+    global_frame: 'map'
+    base_frame: 'base_link'
+
+    # tf lookup timeout. Longer than slam_toolbox's 0.02 s transform_publish_period by
+    # more than an order of magnitude, so a momentarily late transform is waited out
+    # rather than treated as a failure. A lookup that does fail returns None and the
+    # cycle is skipped; nothing here ever raises out of a timer callback.
+    tf_timeout_sec: 0.5
+
+    # ---------------------------------------------------------------- the loop
+
+    # The navigation loop's own clock. Deliberately not the map callback: slam_toolbox
+    # publishes /map on its own schedule, and tying the planning cadence to a SLAM
+    # parameter nobody set with planning in mind is how the course template ends up
+    # replanning at map rate with one full RRT* per candidate cluster. 1.0 s happens to
+    # match slam_lab3.yaml's map_update_interval, so each cycle sees a map that has
+    # changed, but the two are set independently and neither reads the other.
+    replan_period: 1.0            # s
+
+    # Arrival. Matched to the path follower's own look_ahead of 0.2 m: the follower
+    # stops making progress toward a waypoint once it is inside that radius, so
+    # declaring arrival any tighter would wait for a convergence that never comes.
+    arrival_tolerance: 0.20       # m
+
+    # Stall detection. The provided follower has no recovery behaviour of its own, so a
+    # robot wedged against a wall stays wedged until a human notices, and the hardware
+    # session is three hours long.
+    #
+    # 0.05 m is one map cell, below which "progress" is indistinguishable from SLAM
+    # pose jitter. 8.0 s is long enough that a legitimate in-place turn does not look
+    # like a stall: at the follower's max_w of 1.0 rad/s a half turn takes about 3 s,
+    # and the follower zeroes linear velocity while the heading error exceeds 0.3 rad.
+    stall_distance: 0.05          # m
+    stall_timeout: 8.0            # s
+
+    # Staleness. A path older than this is replanned even if the robot is still moving
+    # along it happily, because the map it was planned against is that old too.
+    # 20 s at the Burger's 0.15 m/s follower speed is about 3 m of driving, which in a
+    # 0.8 m maze is several corners' worth of new map.
+    max_path_age: 20.0            # s
+
+    # Termination. Consecutive cycles with no surviving cluster before the node calls
+    # the maze explored and parks the robot.
+    #
+    # 10, not 5, and the difference was measured rather than argued. In simulation the
+    # frontier cell count dips hard and recovers, from a couple of hundred cells to a
+    # couple of dozen, as slam_toolbox redraws the map behind the robot. Two dozen
+    # scattered cells contain no run of five connected ones, so the count is zero
+    # for several seconds in the middle of a perfectly healthy run. Five consecutive
+    # empties sits inside that dip; ten does not, and at this file's 1 Hz replan period
+    # against slam_lab3.yaml's 1 Hz map_update_interval it is ten independent looks.
+    #
+    # Note what this counter does NOT do: it does not run before the node has chosen a
+    # goal at least once. The node starts before SLAM has published anything, and a
+    # short fuse burning during startup makes the run announce "exploration complete"
+    # within seconds of launch. See navigation_node's _on_nothing_to_explore.
+    max_empty_cycles: 10
+
+    # Recovery, for a failure that looks exactly like success. Frontier clusters keep
+    # being found, every one is reported unreachable, and the robot stands still. The
+    # cause is that the robot's own surroundings have closed around it in the map: a
+    # scatter of spurious occupied cells, each inflated by the 0.15 m collar, leaves its
+    # position in a small sealed pocket. On the 7.2 m maze that pocket was 21 cells
+    # against 9096 traversable cells on the same map, with all six frontier goals outside
+    # it reachable in reality.
+    #
+    # A stationary robot cannot map its way out, because the phantom walls only go away
+    # when new scans contradict them. So it moves a short distance to the nearest
+    # genuinely traversable point and tries again. Four attempts, because a robot that
+    # cannot move should stop rather than twitch; any successful cycle resets the count.
+    max_unstick_attempts: 4
+    unstick_radius: 0.60          # m, a little under one maze cell
+
+    # Shortest move worth calling a recovery. The target is the FURTHEST traversable
+    # point within unstick_radius, not the nearest, because the move exists to see the
+    # surroundings from somewhere else. Taking the nearest degenerates: the robot ends up
+    # beside it, and the next attempt is 0.08 m, then 0.03, then 0.01, so four attempts
+    # are spent without the robot going anywhere. Below this distance there is nothing
+    # useful to move to and the cycle counts toward termination instead.
+    unstick_min_distance: 0.15    # m
+
+    # ------------------------------------------------------- collision avoidance
+
+    # Task 3 of the lab instructions, answered by map inflation rather than a reactive
+    # potential field or a risk heuristic. The RRT keeps treating the robot as a point,
+    # exactly as the instructions allow, and the margin is enforced by geometry that
+    # cannot be tuned away at run time. That is a design decision, not a skipped task.
+    #
+    # 0.105 m. The Burger's footprint is 178 by 138 mm (config/robot.yaml), so its
+    # circumscribing radius is sqrt(0.178^2 + 0.138^2)/2 = 0.1126 m. 0.105 m is that
+    # figure with a small allowance shaved off, because the circumscribing radius is the
+    # worst-case diagonal rather than the typical clearance, and because Lab 2 settled
+    # on exactly this number in config/mpc.yaml. One footprint number across both labs
+    # is one number to defend rather than two.
+    #
+    # Note what the map resolution does to it: at 0.05 m per cell this stamps ceil(2.1)
+    # = 3 cells, so the enforced collar is 0.15 m, not 0.105 m. Rounding up rather than
+    # down is deliberate; see grid._inflate for why.
+    inflation_radius: 0.105       # m
+
+    # What counts as a wall. slam_toolbox publishes probabilities, not a binary, and its
+    # own occupancy_threshold is 0.1. 65 is the Nav2 convention and leaves the band from
+    # 1 to 64 as "seen, probably free", which is what a corridor wall's fringe looks like
+    # after a few passes. A threshold of 1 would inflate every faintly-marked cell and
+    # close the maze.
+    occupied_threshold: 65
+
+    # How many occupied neighbours an occupied cell needs before it counts as an obstacle.
+    # Applied before the inflation; 0 disables it.
+    #
+    # A live SLAM map carries isolated occupied cells in the middle of free space: single
+    # spurious returns, a reflection, a cell that crossed the threshold on one beam. One is
+    # harmless. Inflated by a 3-cell disc it becomes a 7 by 7 blocked blob, and a corridor
+    # with a scatter of them through it is a corridor the planner cannot enter.
+    #
+    # That is measured, not feared. On the 7.2 m maze the robot finished inside a region
+    # whose raw map was almost entirely free with a scatter of lone occupied cells, and
+    # whose inflated map was solid: a flood fill from the robot's own cell reached one
+    # cell, its own. All six frontier candidates were reported unreachable and the run
+    # stopped with most of the maze unexplored, while the planner was individually correct
+    # about every one of them.
+    #
+    # 1 is as conservative as this can be while doing anything: it removes only cells with
+    # no occupied neighbour at all in the 8-neighbourhood. Walls are continuous, so a real
+    # wall cell always has one.
+    min_obstacle_neighbours: 1
+
+    # ------------------------------------------------------------- the planner
+
+    rrt:
+      # Iteration cap per candidate. Six candidates per cycle at up to 1500 iterations
+      # each is the worst case the 1.0 s replan period has to absorb, and max_plan_time
+      # below is what actually holds that line.
+      max_iterations: 1500
+
+      # Step size, metres. 0.30 m is six cells: short enough that a single step cannot
+      # jump a maze wall even before the along-the-line collision check, long enough
+      # that crossing an 8 m maze does not need thousands of nodes.
+      step_size: 0.30
+
+      # How often to sample the goal itself instead of a random point. Without this the
+      # tree wanders and only reaches the goal by luck. Above about 0.2 it stops being
+      # RRT and becomes a greedy straight-line probe that gets stuck on the first wall.
+      goal_sample_rate: 0.10
+
+      # Close enough to count as reaching the goal. Three cells. Below one cell it is
+      # smaller than the map's own quantisation and the tree can never satisfy it.
+      goal_tolerance: 0.15        # m
+
+      # RRT* rewiring neighbourhood, twice the step size. The textbook radius shrinks as
+      # log(n)/n, which is what gives the asymptotic optimality proof; a fixed radius is
+      # used instead because the proof is about the limit and this planner is explicitly
+      # budgeted. One number with a reason is easier to defend than a formula whose
+      # constant nobody tuned.
+      rewire_radius: 0.60         # m
+
+      # How far a branch may run through unmapped space before it has to touch
+      # known-free ground again.
+      #
+      # Unknown cells are traversable here, and they have to be: a frontier goal sits on
+      # the boundary of unknown space by definition, so a planner that refuses unknown
+      # cells cannot reach a single goal the exploration gain ever picks. This cap is
+      # what stops that becoming a licence to plan across an entire unmapped maze.
+      #
+      # 0.50 m is a little under one maze cell at the generator's 0.8 m spacing, so a
+      # branch can cross the frontier lip and see round the immediate corner, and cannot
+      # commit to a corridor it has no evidence exists.
+      unknown_lookahead: 0.50     # m
+
+      # Slide 35: "extract all branches to goal, select the shortest". So the tree keeps
+      # growing after the first branch reaches the goal rather than returning it. This
+      # bounds how much longer. Compute time is not graded; the replan period is still
+      # a period.
+      extra_iterations_after_solution: 200
+
+      # Wall-clock budget per candidate, seconds. Six candidates at 0.15 s is 0.9 s
+      # against a 1.0 s replan period. Exceeding it is not an error: the best path found
+      # so far is returned. Measured: a 1500-iteration plan across a 4 by 3 m room
+      # takes about 52 ms.
+      max_plan_time: 0.15         # s
+
+    # -------------------------------------------------------- exploration gain
+
+    gain:
+      # I(p), the information gain term, and the graded centre of this lab.
+      #
+      #   reduced_range  the number of frontier cells within `radius` of the candidate
+      #                  goal, counted across the whole frontier grid rather than within
+      #                  the candidate's own cluster.
+      #   cluster_size   the candidate's own cell count.
+      #
+      # reduced_range is the shipped choice, and it is the lab instructions' own tip
+      # verbatim: "greatly reduce the LiDAR range for info gain computation to drive
+      # exploratory behavior". It also prices something cluster_size gets wrong: two
+      # clusters 20 cm apart each score their own size and neither knows the other is
+      # there, so the robot commits to a spot one visit would have cleared anyway.
+      #
+      # cluster_size is kept so the two can be measured against each other on the same
+      # maze rather than argued about on a slide. The report carries the comparison.
+      mode: 'reduced_range'
+
+      # The reduced range itself, against the Burger's real 3.5 m LiDAR
+      # (robot.yaml: scan_range_max). 0.75 m is a little under one maze cell at the
+      # generator's 0.8 m spacing, which is the scale at which "is there anything left
+      # to see right here" is a meaningful question. At the full 3.5 m every frontier in
+      # a small maze scores nearly the same and the robot has no reason to prefer any of
+      # them, which is exactly the failure the instructions' tip is warning about.
+      radius: 0.75                # m
+
+      # What one frontier cell is worth, in metres of driving.
+      #
+      # Slide 58 writes H(p) = sum(d(p)) - I(p), which subtracts a cell count from a
+      # distance. Those are not the same unit, so the formula needs a conversion factor
+      # to be evaluable at all, and this is it. A report that prints the equation
+      # without naming this number has printed something nobody can compute.
+      #
+      # 0.10 m per cell. At the 0.75 m radius above, a well-populated frontier scores
+      # roughly 30 to 60 cells, so I is worth 3 to 6 m of driving in an 8 m maze: enough
+      # to cross the maze for a genuinely large unexplored region, not enough to ignore
+      # a frontier two metres away.
+      #
+      # This is the greedy-versus-complete knob the optional competition asks about.
+      # At 0.0 the robot always goes to the nearest frontier; raising it makes the robot
+      # travel further for bigger unexplored regions.
+      weight_per_cell: 0.10       # m per frontier cell
+
+    cluster:
+      # Noise floor. A lone frontier pixel is usually one scan ray that found a gap, and
+      # chasing it costs a whole replan cycle. Five cells is 0.25 m of boundary.
+      min_size: 5
+
+      # Growth cap per cluster, per slide 59's "limit/define the number of candidate
+      # solutions". This splits rather than truncates: a 400-cell corridor frontier
+      # becomes four candidates spread along it rather than one at its centre, and the
+      # centre of a long corridor frontier is rarely where you want to drive.
+      max_size: 100
+
+      # How many candidates get a real RRT* path planned to them, taken nearest-first by
+      # straight-line distance. This is the number that decides whether a cycle fits in
+      # its period, since it multiplies max_plan_time above. Straight-line distance is an
+      # acceptable pre-filter precisely because the real path length is then computed for
+      # everything that survives it.
+      max_candidates: 6
+
+    # ------------------------------------------------------------- commitment
+
+    commit:
+      # Hysteresis against frontier oscillation, the first anticipated challenge in the
+      # Lab 3 plan. H is memoryless: as the robot drives toward cluster A, d shrinks for
+      # A but the map grows behind it and I can flip the ranking to B and back, so the
+      # robot bounces between two similar clusters instead of committing to either.
+      #
+      # A rival must beat the committed goal by this much, in H units (metres, after the
+      # weight above is applied), to take the goal. 0.5 is about 5 frontier cells' worth
+      # of gain or half a metre of driving: small enough that a genuinely better option
+      # still wins, large enough that map noise does not move the goal.
+      switch_margin: 0.5
+
+      # How close a candidate has to be to the committed goal to count as the same
+      # frontier. The goal point drifts every cycle even for an unmistakably identical
+      # frontier, because the cluster's cells change as the map fills in and the
+      # centroid moves with them. 0.30 m is six cells.
+      match_radius: 0.30          # m
+
+    goal:
+      # How close a candidate has to be to a retired goal to be retired with it.
+      #
+      # A goal is retired once the robot has stood on it, or once the robot has stalled
+      # trying to reach it, and no candidate within this radius is offered again for the
+      # rest of the run. Without it the nearest surviving frontier keeps winning on
+      # distance forever: H = sum(d) - w I contains nothing that knows the robot has
+      # already been somewhere. Without it the robot arrives, finds the frontier still
+      # there, replans 0.3 m to the same goal and arrives again, indefinitely.
+      #
+      # 0.30 m, six cells, matching commit.match_radius above so that "the same frontier"
+      # means one thing in this file rather than two. Larger would start retiring
+      # genuinely separate frontiers in the next maze cell along.
+      exhaust_radius: 0.30        # m
+
+    # ------------------------------------------------------------ path shape
+
+    # Spacing of the waypoints actually published, metres. The planner returns them one
+    # step size apart, 0.30 m; this resamples the same polyline finer before publishing.
+    #
+    # It exists because of how the supplied follower consumes a path: it drops a waypoint
+    # as soon as it is within its 0.20 m look-ahead and steers at the next one, so across
+    # a corner it aims through the corner and cuts the chord. The planner checked the
+    # segments; the robot drove the chord. In a 0.7 m corridor that is enough to put the
+    # robot inside the inflation margin and wedge it against a wall, and a wedged robot
+    # spins its wheels, runs odometry away from the truth, and takes SLAM's scan matching
+    # with it. That ends a run with a smeared map.
+    #
+    # 0.10 m, half the follower's look-ahead, so there is always a waypoint inside the
+    # look-ahead that lies on the checked path. Costs only a longer message.
+    path_waypoint_spacing: 0.10   # m
+
+    # ------------------------------------------------------------ visualisation
+
+    # The RRT tree, the scored candidate goals and the status text. True in simulation,
+    # where they are the figures the report needs. Consider false on the robot: a
+    # 1500-node tree is 1499 line segments republished every cycle, over a shared lab
+    # router, alongside the map and the laser scan.
+    publish_markers: true

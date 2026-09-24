@@ -135,11 +135,26 @@ Make sure all the required topics are present: `/odom`, `/cmd_vel`, `/scan`,
 
 ## Recording the video and trajectory plots for the report
 
-Two scripts in `scripts/` do this. One-time setup on a new machine (no sudo needed):
+Two scripts in `scripts/` do this. One-time setup on a new machine:
 
 ```bash
-pip install --user python-xlib
+sudo apt install x11-utils gstreamer1.0-tools gstreamer1.0-plugins-base \
+                 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps python3-xlib
 ```
+
+`x11-utils` provides `xwininfo`, which finds the RViz window; `gstreamer1.0-tools` and
+the two plugin packages provide `gst-launch-1.0`, `ximagesrc`, `videoconvert`, `vp8enc`
+and `webmmux`, which do the capture and encode; `python3-xlib` raises the window before
+capture starts. Only the recording needs any of this.
+
+Check the plugins before a lab session rather than during one:
+
+```bash
+gst-inspect-1.0 ximagesrc && gst-inspect-1.0 vp8enc && gst-inspect-1.0 webmmux
+```
+
+If `python3-xlib` is unavailable on your distribution, `pip install --user
+--break-system-packages python-xlib` works without sudo.
 
 **Video** -- records the bag and a screen capture of RViz together, in one pass, so
 you don't need to replay the bag separately just to make the video:
@@ -158,6 +173,16 @@ python3 scripts/record_demo.py bags/task1-position
 This produces `bags/task1-position/` (the bag) and `bags/task1-position.webm` (the
 video). WebM plays in any modern browser or video player; convert it if your
 submission requires a specific container.
+
+Press Ctrl-C **once** and then wait. `ros2 bag record` keeps writing after the
+interrupt, and that has taken anywhere from 20 seconds to over three minutes on the
+development machine for bags of only a few megabytes. The script waits for it and prints
+both file sizes when it is genuinely done. A second Ctrl-C truncates the bag, and
+`ros2 bag info` will still call the truncated file valid. If it is still going after a
+few minutes, `pkill -TERM -f "ros2 bag record"` from another terminal closes it cleanly.
+
+Always run `ros2 bag info <bag>` afterwards and check the duration and message counts
+against the run you just did.
 
 Why a screen capture and not `ffmpeg -f x11grab`: x11grab captures a fixed screen
 region from the (possibly composited) root window, which returns a black frame on a

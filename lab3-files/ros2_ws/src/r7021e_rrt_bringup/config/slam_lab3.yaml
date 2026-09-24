@@ -1,0 +1,128 @@
+# slam_toolbox parameters for Lab 3 exploration.
+#
+# Derived from slam_toolbox's own mapper_params_online_async.yaml and changed in the
+# four places that matter for exploring a maze. Those are marked CHANGED below, with
+# the course's own value alongside, because they are the only places a run behaves
+# differently from the course's bring-up.
+#
+# The node name is slam_toolbox, not a wildcard. The course file uses "/*:", which
+# applies every key below to every node that loads the file; that is fine when the file
+# is loaded by one node and a trap the first time it is loaded by two.
+
+slam_toolbox:
+  ros__parameters:
+
+    # Solver
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # Frames and topics. These must match navigation_node's global_frame and
+    # base_frame in lab3.yaml, and the path follower's hardcoded 'map' and
+    # 'base_link'. The follower does not take them as parameters, so changing
+    # either of these here breaks it silently.
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: scan
+    mode: mapping
+
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.02
+    resolution: 0.05
+    # CHANGED, course value 0.5. The shortest interval between two scans entering
+    # the graph, in seconds, and the number that decides whether scan matching
+    # survives a turn.
+    #
+    # The arithmetic: the path follower turns at up to max_w = 1.0 rad/s, so at
+    # 0.5 s the robot can rotate 0.5 rad between two accepted scans. The matcher's
+    # coarse angular search is coarse_search_angle_offset = 0.349 rad. The window
+    # is smaller than the rotation it has to recover, so a fast turn is not
+    # matched, and the pose it falls back on is odometry, which is exactly what
+    # was wrong. The visible result is a map whose first half is clean and
+    # rectilinear and whose second half is the same maze rotated by twenty
+    # degrees and smeared.
+    #
+    # At 0.1 s the limit becomes the scan rate itself, about 5 Hz, so the
+    # worst case is 0.2 rad between scans, comfortably inside the search window.
+    # It costs more graph nodes and more compute, neither of which is graded.
+    minimum_time_interval: 0.1
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+    use_map_saver: true
+    map_name: map
+
+    # CHANGED, course value 5.0. How often the occupancy grid is rebuilt and
+    # published, in seconds. The frontier detector runs off /map and the
+    # navigation loop runs off the frontier grid, so this is the real refresh
+    # rate of the entire exploration decision. At 5.0 s the robot drives most of
+    # a maze cell between two views of the world it is exploring. At 1.0 s it
+    # matches the navigation loop's own replan_period, so each planning cycle
+    # sees a map that changed since the last one.
+    map_update_interval: 1.0
+
+    # Left at the course's 20.0, after trying 3.5 and reverting it.
+    #
+    # The reasoning for lowering it was wrong. This parameter clips how far a ray
+    # is traced when rastering the occupancy grid; it does not decide which rays
+    # are trusted. Setting it to 20 m with a 3.5 m sensor is therefore a no-op,
+    # because no ray ever gets that far. Setting it to exactly the sensor's own
+    # maximum is not a no-op and is actively worse: a beam that hit nothing comes
+    # back at or near 3.5 m, and clipping right at that boundary lets those
+    # no-return beams raster as if they had struck something.
+    max_laser_range: 20.0
+
+    # CHANGED, course values 0.5 and 0.5. How far the robot must move before a
+    # new scan is added to the graph. In a maze of 0.8 m cells, 0.5 m is most of
+    # a cell, so a robot turning a corner can add no scan at all through the
+    # turn and the map gains nothing where it is needed most. 0.2 m and 0.3 rad
+    # cost more graph nodes and more compute, neither of which is graded.
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.3
+
+    # General
+    use_scan_matching: true
+    use_scan_barycenter: true
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # Correlation
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Loop closure
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan matcher
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+    min_pass_through: 2
+
+    # The probability at which a cell is published as occupied. Left at the
+    # course's 0.1 deliberately: navigation_node does its own thresholding at
+    # occupied_threshold 65 on the published grid, so lowering this would move
+    # the decision into SLAM where the report cannot see it.
+    occupancy_threshold: 0.1

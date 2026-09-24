@@ -226,3 +226,76 @@ The lab states `0 < v < 0.5` and `-0.8 < omega < 0.8`. The Burger does 0.22 m/s 
 of each pair, rather than one number being edited to mean both. A model allowed to predict
 0.5 m/s on a robot that saturates at 0.22 plans a future the robot cannot reach, and every
 plan it makes is then wrong in the same direction without the controller finding out.
+
+## Lab 3
+
+Lab 3 keeps the shape Labs 1 and 2 established and adds one thing neither of them needed:
+a shared data structure between two algorithm modules.
+
+### Package split, and why there are three packages rather than two
+
+`r7021e_rrt` holds the algorithms and the one node. `r7021e_rrt_bringup` holds the launch
+files, parameters, RViz configuration and the Gazebo mazes. The third package is the
+course's own `r7021e_exploration`, downloaded from Canvas and used unmodified for its
+frontier detector and its path follower.
+
+Not modifying the course package is a decision, not an omission. The lab's own words are
+that the focus is only on the path planner and the exploration method, and a run using an
+unmodified follower is a run whose planner is the only thing being judged. Everything this
+implementation needed from the follower it worked around on its own side.
+
+### One grid representation, in a file both modules import
+
+`grid.py` exists because `rrt_star.py` and `exploration_gain.py` both index the same
+cells, and two grid formats in one package is two sets of coordinate conventions to get
+wrong. It is also where the obstacle inflation lives, so Task 3's answer is in exactly one
+place and both modules see the same walls.
+
+The frontier detector copies `msg.info` straight from the map onto its own output, so
+`/map` and `/frontiers` are guaranteed to index the same cells. That guarantee is relied
+on deliberately and checked rather than assumed, because it only holds while both messages
+come from the same map update, and they arrive on separate topics with no synchronisation.
+
+### Plain Python for the algorithms, again
+
+`grid.py`, `rrt_star.py` and `exploration_gain.py` import no ROS. `navigation_node.py` is
+the only file that imports `rclpy`, and it owns subscriptions, timers, message types,
+headers, tf and parameters, and nothing else.
+
+This is the same split Labs 1 and 2 used and it earned its place here more than in either:
+sampling, steering, collision checking against an occupancy grid, flood-fill clustering
+and centroid arithmetic are all easy to get subtly wrong and all testable in milliseconds
+against a grid typed out by hand. The suite is 82 tests and runs in under two seconds.
+
+### Tasks 1 and 5 are the same node
+
+Task 1 is "send a path, send another when the robot reaches the end". Task 5 is that loop
+with the goal chosen by Task 4 rather than written down. Building Task 1 as a separate
+throwaway script would have meant building the same loop twice and then throwing away the
+half that had been tested.
+
+### Why the loop runs on a timer rather than on the map callback
+
+The course template replans inside its map callback. That ties the planning cadence to a
+SLAM parameter nobody set with planning in mind, and with one full RRT* per candidate
+cluster it is far too often. A 1 Hz timer replans on arrival, on a stall, or on a path
+that has aged out, and each of those three is a named parameter with a reason.
+
+The stall trigger is worth keeping even though it fires rarely: the supplied follower has
+no recovery behaviour of its own, so a robot wedged against a wall stays wedged until a
+human notices, and a hardware session is three hours long.
+
+### Two parameters that are launch arguments rather than file entries
+
+`gain_mode` and `inflation` are launch arguments because runs are compared across them. A
+comparison made by editing a YAML file between two runs cannot be shown to have differed
+in only one place. Everything else lives in `config/lab3.yaml` with the reason for its
+value written next to it.
+
+### Open items
+
+- Hardware. Everything measured so far is simulation on generated mazes.
+- The Concept Lab maze's real cell size and outer dimensions, so the worlds can be
+  regenerated to match rather than guessed at 0.8 m.
+- Whether the clusters still unreachable at termination are genuinely unreachable or an
+  artefact of the planner's per-candidate time budget.

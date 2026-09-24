@@ -5,7 +5,13 @@
 /lab2-files/ros2_ws/build/
 /lab2-files/ros2_ws/install/
 /lab2-files/ros2_ws/log/
+/lab3-files/ros2_ws/build/
+/lab3-files/ros2_ws/install/
+/lab3-files/ros2_ws/log/
+# The course's own package, extracted from the Canvas zip rather than tracked here.
+/lab3-files/ros2_ws/src/r7021e_exploration/
 __pycache__/
+.pytest_cache/
 *.pyc
 
 /lab1-files/ros2_ws/bags/*
@@ -17,6 +23,11 @@ __pycache__/
 !/lab2-files/ros2_ws/bags/.gitkeep
 !/lab2-files/ros2_ws/bags/*.png
 !/lab2-files/ros2_ws/bags/*.webm
+
+/lab3-files/ros2_ws/bags/*
+!/lab3-files/ros2_ws/bags/.gitkeep
+!/lab3-files/ros2_ws/bags/*.png
+!/lab3-files/ros2_ws/bags/*.webm
 
 # editor and OS noise
 .vscode/

@@ -59,18 +59,6 @@ Visualization Manager:
     Color Transformer: FlatColor
     Color: 0; 170; 255
     Alpha: 1
-  - Class: rviz_default_plugins/PointStamped
-    Name: Closest wall point
-    Enabled: true
-    Topic:
-      Value: /closest_wall_point
-      Depth: 5
-      Durability Policy: Volatile
-      Reliability Policy: Reliable
-    Color: 255; 0; 0
-    Alpha: 1
-    Radius: 0.06
-    History Length: 1
   - Class: rviz_default_plugins/Marker
     Name: Goal marker
     Enabled: true

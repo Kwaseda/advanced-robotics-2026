@@ -1,0 +1,169 @@
+# RViz configuration for Lab 3, autonomous exploration.
+#
+# Fixed frame is map, not odom. Labs 1 and 2 used odom because nothing published a
+# map; here slam_toolbox does, and the path, the frontier grid and every marker this
+# package publishes are stamped in map. Watching an exploration run in odom shows the
+# whole world sliding sideways on every loop closure.
+#
+# The two occupancy grids are drawn in this order deliberately: /map underneath
+# in the usual grey costmap scheme, /frontiers on top in a flat colour, so the
+# frontier cells read as a highlight over the map rather than a second map
+# competing with it.
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+  Property Tree Widget:
+    Expanded: null
+    Splitter Ratio: 0.5
+- Class: rviz_common/Views
+  Name: Views
+Visualization Manager:
+  Class: ''
+  Name: root
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Name: Grid
+    Enabled: true
+    Cell Size: 0.8
+    Plane Cell Count: 20
+    Color: 160; 160; 164
+    Reference Frame: <Fixed Frame>
+  - Class: rviz_default_plugins/TF
+    Name: TF
+    Enabled: false
+    Show Names: true
+    Show Axes: true
+    Show Arrows: false
+    Marker Scale: 0.3
+  - Class: rviz_default_plugins/Map
+    Name: SLAM map
+    Enabled: true
+    Topic:
+      Value: /map
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Alpha: 0.9
+    Color Scheme: map
+    Draw Behind: true
+    Update Topic:
+      Value: /map_updates
+    Value: true
+  - Class: rviz_default_plugins/Map
+    Name: Frontier cells
+    Enabled: true
+    Topic:
+      Value: /frontiers
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Alpha: 0.8
+    Color Scheme: costmap
+    Draw Behind: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Name: Laser scan
+    Enabled: true
+    Topic:
+      Value: /scan
+      Depth: 5
+      Durability Policy: Volatile
+      Reliability Policy: Best Effort
+    Style: Points
+    Size (Pixels): 3
+    Decay Time: 0
+    Color Transformer: FlatColor
+    Color: 0; 170; 255
+    Value: true
+  - Class: rviz_default_plugins/Path
+    Name: Planned path
+    Enabled: true
+    Topic:
+      Value: /path
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Line Style: Lines
+    Color: 25; 255; 0
+    Alpha: 1
+    Pose Style: Arrows
+    Arrow Length: 0.08
+    Shaft Diameter: 0.01
+    Shaft Length: 0.05
+    Head Diameter: 0.03
+    Head Length: 0.03
+    Value: true
+  - Class: rviz_default_plugins/Marker
+    Name: RRT* tree
+    Enabled: true
+    Topic:
+      Value: /rrt_tree
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Candidate goals
+    Enabled: true
+    Topic:
+      Value: /frontier_goals
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Value: true
+  - Class: rviz_default_plugins/Marker
+    Name: Status
+    Enabled: true
+    Topic:
+      Value: /exploration_status
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Name: Burger
+    Enabled: true
+    Description Topic:
+      Value: /robot_description
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+    Alpha: 1
+    Value: true
+  Global Options:
+    Fixed Frame: map
+    Background Color: 48; 48; 48
+    Frame Rate: 30
+  Tools:
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Select
+  - Class: rviz_default_plugins/FocusCamera
+  - Class: rviz_default_plugins/Measure
+    Line color: 128; 128; 0
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 10
+      Pitch: 1.4
+      Yaw: 4.7
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Target Frame: <Fixed Frame>
+    Saved: null
+Window Geometry:
+  Height: 900
+  Width: 1400
+  Displays:
+    collapsed: false
+  Views:
+    collapsed: false
