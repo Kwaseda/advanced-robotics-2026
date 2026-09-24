@@ -4,7 +4,7 @@
 # /reference_path. This is the only task where the horizon is filled with the reference's
 # future rather than one point held constant, and the only task where that matters.
 
-/mpc_node:
+/**:
   ros__parameters:
     # The circle has radius 0.8 m about the origin, so it touches +/- 0.8 on both axes.
     # The box has to clear that plus the detour around the obstacle.

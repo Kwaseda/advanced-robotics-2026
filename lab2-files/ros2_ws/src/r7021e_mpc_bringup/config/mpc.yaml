@@ -6,7 +6,7 @@
 #
 # The task overlays (mpc_task1-4.yaml) load after this file and change only what differs.
 
-/mpc_node:
+/**:
   ros__parameters:
     # Prediction step and the period of the control timer, one number for both, so the
     # first predicted interval is exactly the interval the command is held for.

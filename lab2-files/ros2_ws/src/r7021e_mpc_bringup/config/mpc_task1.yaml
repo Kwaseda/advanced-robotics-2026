@@ -11,7 +11,7 @@
 #                              solver status. Not a bug: the goal is outside the feasible
 #                              set, so the closest feasible point is the boundary itself.
 
-/mpc_node:
+/**:
   ros__parameters:
     boundary_x: [-1.0, 1.0]
     boundary_y: [-1.0, 1.0]

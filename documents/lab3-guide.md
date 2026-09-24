@@ -39,7 +39,7 @@ This lab reuses two nodes from the course's own package, unmodified. Download
 `src/`, and build it alongside these packages:
 
 ```bash
-cd lab3-files/ros2_ws/src
+cd ~/advanced-robotics-2026/lab3-files/ros2_ws
 # extract r7021e_exploration here
 ```
 
@@ -84,21 +84,28 @@ Three packages should build: `r7021e_rrt`, `r7021e_rrt_bringup`, and the course'
 
 ## Running it
 
+Every terminal below needs its own `export ROS_DOMAIN_ID=34  # turtle4` -- it is
+included in each block so you can copy the whole thing straight into a fresh terminal.
+The launch file sets it only for the nodes it starts, not for the shell you typed it in.
+
 In simulation, on the small maze, with RViz:
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_rrt_bringup lab3.launch.py sim:=true rviz:=true
 ```
 
 On the full maze:
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_rrt_bringup lab3.launch.py sim:=true rviz:=true world:=lab3_maze
 ```
 
 On the robot, with `turtlebot3_bringup robot.launch.py` already running over ssh:
 
 ```bash
+export ROS_DOMAIN_ID=34  # for turtle4
 ros2 launch r7021e_rrt_bringup lab3.launch.py use_sim_time:=false domain_id:=34 rviz:=true
 ```
 
@@ -111,7 +118,7 @@ ros2 launch r7021e_rrt_bringup lab3.launch.py use_sim_time:=false domain_id:=34 
 | `gui` | `true` | Gazebo's own GUI. `false` for a headless sweep |
 | `rviz` | `false` | RViz2 with the saved Lab 3 configuration |
 | `slam` | `true` | start slam_toolbox |
-| `domain_id` | `34` | `ROS_DOMAIN_ID`, which the lab sets to `3<robot number>` |
+| `domain_id` | `34` | `ROS_DOMAIN_ID`, which the lab sets to `34` |
 | `use_sim_time` | `true` | `true` in Gazebo, `false` on the robot |
 | `gain_mode` | `reduced_range` | which information gain. `cluster_size` is the alternative |
 | `inflation` | `0.105` | obstacle inflation radius in metres |
@@ -151,6 +158,7 @@ All in `config/lab3.yaml`, each with the reason for its value next to it. Read t
 off the running node rather than trusting the file:
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 param get /navigation_node inflation_radius
 ros2 param get /navigation_node gain.radius
 ```
@@ -188,9 +196,11 @@ not running and records the rest.
 
 ```bash
 # 1. the launch file, with RViz, started by you
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_rrt_bringup lab3.launch.py sim:=true rviz:=true
 
-# 2. the recorder, once RViz is actually on screen
+# 2. the recorder, once RViz is actually on screen (in its own terminal)
+export ROS_DOMAIN_ID=34  # turtle4
 python3 scripts/record_demo.py --out-basename lab3-run
 ```
 
@@ -239,8 +249,8 @@ as though it were motion: it can show the robot leaving a sealed maze.
 
 ## Lab day checklist
 
-1. `export ROS_DOMAIN_ID=3<robot number>` in **every** terminal, and pass
-   `domain_id:=3<robot number>` to the launch file.
+1. `export ROS_DOMAIN_ID=34  # turtle4` in **every** terminal, and pass
+   `domain_id:=34` to the launch file.
 2. `ssh turtle@192.168.50.<number>0`, password `turtle`, then
    `ros2 launch turtlebot3_bringup robot.launch.py`. Leave it running.
 3. `ros2 topic info /cmd_vel -v` from your laptop. If the robot's subscription is not

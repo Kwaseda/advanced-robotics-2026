@@ -94,7 +94,7 @@ optional features the base install does not ship, and the nodes silence them.
 labs can be sourced at once without shadowing each other.
 
 ```bash
-cd lab2-files/ros2_ws
+cd ~/advanced-robotics-2026/lab2-files/ros2_ws
 colcon build --symlink-install
 source install/setup.bash
 ```
@@ -102,23 +102,28 @@ source install/setup.bash
 ## Running the four tasks
 
 Add `sim:=true` for Gazebo and `rviz:=true` to watch. On the robot, `use_sim_time:=false`
-and set `domain_id` to yours.
+and set `domain_id` to yours. Every terminal below needs its own
+`export ROS_DOMAIN_ID=34  # turtle4` -- it is included in each block so you can copy the
+whole thing straight into a fresh terminal.
 
 ### Task 1, setpoint tracking
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_mpc_bringup lab2.launch.py task:=1 sim:=true rviz:=true
 ```
 
 In a second terminal, with the same `ROS_DOMAIN_ID` exported:
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 0.8, y: 0.5, z: 0.0}}"
 ```
 
 Then the goal outside the boundary, which is the part the task actually asks for:
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 1.5, y: 0.0, z: 0.0}}"
 ```
 
@@ -134,11 +139,15 @@ trajectory plot comes out with no goal on it.
 
 ### Task 1c, varying sampling time and horizon
 
-Both are parameters, so no rebuild is needed:
+Both are now launch arguments (`lab2.launch.py`), not something you pass with
+`--ros-args -p`. `--ros-args -p` is `ros2 run` syntax for overriding a single node's own
+parameters directly; `ros2 launch` takes `<name>:=<value>` launch arguments instead, and
+rejects `--ros-args` outright. No rebuild needed to change the values, just the two
+arguments below:
 
 ```bash
-ros2 launch r7021e_mpc_bringup lab2.launch.py task:=1 sim:=true \
-  --ros-args -p t_step:=0.2 -p n_horizon:=10
+export ROS_DOMAIN_ID=34  # turtle4
+ros2 launch r7021e_mpc_bringup lab2.launch.py task:=1 sim:=true t_step:=0.2 n_horizon:=10
 ```
 
 The number that matters is neither one alone. It is `n_horizon * t_step * v_max`, the
@@ -149,6 +158,7 @@ explains most of the behaviour in tasks 2 to 4.
 ### Task 2, one obstacle
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_mpc_bringup lab2.launch.py task:=2 sim:=true rviz:=true
 ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 1.5, y: 0.0, z: 0.0}}"
 ```
@@ -160,6 +170,7 @@ identically on the real robot, where there is no simulator to put a body in.
 ### Task 3, two obstacles
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_mpc_bringup lab2.launch.py task:=3 sim:=true rviz:=true
 ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 1.8, y: 0.0, z: 0.0}}"
 ```
@@ -167,6 +178,7 @@ ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{positio
 ### Task 4, circular trajectory with an obstacle
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_mpc_bringup lab2.launch.py task:=4 sim:=true rviz:=true
 ```
 
@@ -221,16 +233,19 @@ Three terminals, in this order:
 
 ```bash
 # 1. the launch file, with RViz, started by you
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_mpc_bringup lab2.launch.py task:=2 sim:=true rviz:=true
 ```
 
 ```bash
 # 2. the recorder, once RViz is actually on screen
+export ROS_DOMAIN_ID=34  # turtle4
 python3 scripts/record_demo.py bags/task2-obstacle
 ```
 
 ```bash
 # 3. the task itself
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 1.5, y: 0.0, z: 0.0}}"
 ```
 
@@ -297,7 +312,7 @@ actually enforced. A path that hugs the outer circle is correct, not a near miss
 
 ## Lab day checklist
 
-1. `export ROS_DOMAIN_ID=3<robot number>` in every terminal. The launch file sets it for
+1. `export ROS_DOMAIN_ID=34  # turtle4` in every terminal. The launch file sets it for
    the nodes it starts, but not for the shell you typed it in.
 2. `export TURTLEBOT3_MODEL=burger` if you are running the simulator.
 3. Confirm `/cmd_vel` is `TwistStamped`, not `Twist`. An unstamped header on a stamped

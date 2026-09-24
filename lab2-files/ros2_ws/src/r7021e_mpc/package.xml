@@ -8,6 +8,7 @@
     input and boundary constraints, static obstacle avoidance, and circular trajectory
     tracking with an obstacle.
   </description>
+  <maintainer email="domadd-2@student.ltu.se">Dominic Addo</maintainer>
   <license>MIT</license>
 
   <!-- Every message type the package imports is declared here. -->

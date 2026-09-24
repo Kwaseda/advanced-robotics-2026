@@ -1,6 +1,6 @@
 # Lab 2 task 3: two static obstacles. Overlay on mpc.yaml.
 
-/mpc_node:
+/**:
   ros__parameters:
     boundary_x: [-2.0, 2.0]
     boundary_y: [-2.0, 2.0]

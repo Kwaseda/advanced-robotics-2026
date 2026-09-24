@@ -8,6 +8,7 @@
     Holds no nodes: it starts the ones in r7021e_rrt and in the course's own
     r7021e_exploration package, and decides which of them run together.
   </description>
+  <maintainer email="domadd-2@student.ltu.se">Dominic Addo</maintainer>
   <license>MIT</license>
 
   <exec_depend>launch</exec_depend>

@@ -19,6 +19,8 @@ Arguments:
 
     task          1 | 2 | 3 | 4. Selects config/mpc_task<N>.yaml and, for 4, starts the
                   circular trajectory generator.
+    t_step        Overrides mpc_node's t_step parameter (default from mpc.yaml, 0.1 s).
+    n_horizon     Overrides mpc_node's n_horizon parameter (default from mpc.yaml, 20).
     domain_id     ROS_DOMAIN_ID for every node started here. The lab dictates
                   3<robot number>, so turtle4 is 34.
     use_sim_time  true in Gazebo, false on the robot.
@@ -45,6 +47,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 PACKAGE = 'r7021e_mpc_bringup'
@@ -59,6 +62,14 @@ def generate_launch_description():
             choices=['1', '2', '3', '4'],
             description='1 setpoint tracking, 2 one obstacle, 3 two obstacles, '
                         '4 circular trajectory with an obstacle'),
+        DeclareLaunchArgument(
+            't_step', default_value='0.1',
+            description="Overrides mpc_node's t_step parameter, seconds. Default matches "
+                        'mpc.yaml'),
+        DeclareLaunchArgument(
+            'n_horizon', default_value='20',
+            description="Overrides mpc_node's n_horizon parameter, steps. Default matches "
+                        'mpc.yaml'),
         DeclareLaunchArgument(
             'domain_id', default_value='34',
             description='ROS_DOMAIN_ID, the lab uses 3<robot number>. turtle4 is 34'),
@@ -90,16 +101,24 @@ def generate_launch_description():
     # still needs its own export.
     domain = SetEnvironmentVariable('ROS_DOMAIN_ID', LaunchConfiguration('domain_id'))
 
-    # Three files, in this order, because later files win on a repeated key:
-    # robot.yaml (physical limits), mpc.yaml (shared defaults), mpc_task<N>.yaml (deltas).
-    # The overlay can widen the boundary and add obstacles; it cannot contradict a
-    # physical limit, because the node takes the min() of the lab bound and the robot
-    # bound rather than whichever it read last.
+    # Four entries, in this order, because later ones win on a repeated key: robot.yaml
+    # (physical limits), mpc.yaml (shared defaults), mpc_task<N>.yaml (deltas), then the
+    # t_step/n_horizon override dict last. All four target the /** wildcard scope (see
+    # robot.yaml), not /mpc_node explicitly: ROS 2 lets an exact node-name match win over
+    # /** regardless of file order, so if the override dict here (always written to a /**
+    # params file by launch_ros) disagreed in scope with the others it would silently lose
+    # even though it is last. The overlay can widen the boundary and add obstacles; it
+    # cannot contradict a physical limit, because the node takes the min() of the lab bound
+    # and the robot bound rather than whichever it read last.
     mpc_parameters = [
         PathJoinSubstitution([config_dir, 'robot.yaml']),
         PathJoinSubstitution([config_dir, 'mpc.yaml']),
         PathJoinSubstitution([config_dir, ['mpc_task', task, '.yaml']]),
-        {'use_sim_time': use_sim_time},
+        {
+            'use_sim_time': use_sim_time,
+            't_step': ParameterValue(LaunchConfiguration('t_step'), value_type=float),
+            'n_horizon': ParameterValue(LaunchConfiguration('n_horizon'), value_type=int),
+        },
     ]
 
     circling = IfCondition(PythonExpression(['"', task, '" == "4"']))

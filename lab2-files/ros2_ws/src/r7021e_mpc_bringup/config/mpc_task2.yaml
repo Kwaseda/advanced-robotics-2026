@@ -1,6 +1,6 @@
 # Lab 2 task 2: one static obstacle. Overlay on mpc.yaml.
 
-/mpc_node:
+/**:
   ros__parameters:
     # The tutorial's own note, "adjust the boundary constraints if necessary", applies
     # here: at +/- 1.0 the boundary and the obstacle squeeze the corridor from both sides

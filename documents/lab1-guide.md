@@ -58,22 +58,29 @@ Wall-following parameters:
 ## Building the system
 
 ```bash
-cd ~/ros2_ws
+cd ~/advanced-robotics-2026/lab1-files/ros2_ws
 colcon build --symlink-install
 source install/setup.bash
 ```
 
 ## Testing commands for simulation
 
+Every terminal below needs its own `export ROS_DOMAIN_ID=34  # turtle4` -- it is
+included in each block so you can copy the whole thing straight into a fresh terminal.
+The launch file only sets it for the nodes it starts, not for the shell you typed it in.
+
 ### Task 1: position tracking
 
 Start the controller in simulation:
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_bringup lab1.launch.py sim:=true rviz:=true
 ```
 
 In a separate terminal, send position commands:
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
+
 # Move 1 meter forward
 ros2 topic pub --once /new_position geometry_msgs/Pose "{position: {x: 1.0, y: 0.0}}"
 
@@ -90,18 +97,21 @@ Watch RViz to confirm the robot reaches each goal and stops within tolerance.
 
 Start the figure-eight trajectory:
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_bringup lab1.launch.py sim:=true trajectory:=true rviz:=true
 ```
 
 The robot waits 3 seconds, then traces the figure eight for 2 laps. Check wall-point
 detection with:
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 topic echo /closest_wall_point
 ```
 
 ### Task 4: wall following
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_bringup lab1.launch.py sim:=true mode:=wall_following rviz:=true
 ```
 
@@ -112,16 +122,19 @@ and close the loop.
 
 ### Task 1
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 bag record -o bags/task1-position /odom /cmd_vel /scan /new_position /tf /tf_static
 ```
 
 ### Tasks 2 and 3
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 bag record -o bags/task2-eight /odom /cmd_vel /scan /new_position /tf /tf_static
 ```
 
 ### Task 4
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 bag record -o bags/task4-wall /odom /cmd_vel /scan /tf /tf_static
 ```
 
@@ -161,13 +174,16 @@ you don't need to replay the bag separately just to make the video:
 
 ```bash
 # terminal 1: start the sim as usual, with rviz:=true
+export ROS_DOMAIN_ID=34  # turtle4
 ros2 launch r7021e_bringup lab1.launch.py sim:=true rviz:=true
 
 # terminal 2, once RViz is up
+export ROS_DOMAIN_ID=34  # turtle4
 source /opt/ros/jazzy/setup.bash && source install/setup.bash
 python3 scripts/record_demo.py bags/task1-position
 
 # terminal 3: run the task (publish goals, etc.), then Ctrl-C terminal 2 when done
+# (needs export ROS_DOMAIN_ID=34 too, see the Task 1/2/3 commands above)
 ```
 
 This produces `bags/task1-position/` (the bag) and `bags/task1-position.webm` (the
@@ -366,18 +382,23 @@ as convergence of the physical robot.
 ssh turtle@192.168.50.<number x 10>
 ```
 
-2. Start robot bringup (on the robot):
+2. Set the domain ID on the robot's own ssh session, then start robot bringup (on the
+   robot). The export must come first: `ROS_DOMAIN_ID` is read once at process start, so
+   setting it after `robot.launch.py` is already running does not move it.
 ```bash
+export ROS_DOMAIN_ID=34  # for turtle4
 ros2 launch turtlebot3_bringup robot.launch.py
 ```
 
-3. Set the domain ID in each terminal:
+3. Set the domain ID in every other terminal too, laptop included -- each terminal
+   needs its own `export`:
 ```bash
 export ROS_DOMAIN_ID=34  # for turtle4
 ```
 
 4. Launch the controller (from your laptop):
 ```bash
+export ROS_DOMAIN_ID=34  # for turtle4
 ros2 launch r7021e_bringup lab1.launch.py use_sim_time:=false domain_id:=34
 ```
 
@@ -385,6 +406,7 @@ ros2 launch r7021e_bringup lab1.launch.py use_sim_time:=false domain_id:=34
 
 **Step 1: verify message types**
 ```bash
+export ROS_DOMAIN_ID=34  # for turtle4
 ros2 topic info /cmd_vel -v
 ```
 Both ends should show `geometry_msgs/msg/TwistStamped`. A mismatch means the robot
@@ -392,6 +414,7 @@ won't move, and it won't log an error either.
 
 **Step 2: check parameters**
 ```bash
+export ROS_DOMAIN_ID=34  # for turtle4
 ros2 param get /controller_node robot.max_linear_velocity
 ```
 Should return 0.22. A different value means the parameter files didn't load.
@@ -471,6 +494,8 @@ far as an odometry trail, the laser scan, and the current goal.
 Before your lab session, verify:
 
 ```bash
+export ROS_DOMAIN_ID=34  # turtle4
+
 # Build succeeds
 cd ~/ros2_ws && colcon build --symlink-install
 
