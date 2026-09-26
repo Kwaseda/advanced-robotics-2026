@@ -179,6 +179,83 @@ class WallFollowLaw:
         )
 
 
+def max_fittable_wall_angle(beam_separation: float) -> float:
+    """Largest wall angle the two beam fit can resolve, radians, for a given separation.
+
+    Eliminating d from the two beam equations gives the forward range in terms of the
+    perpendicular one:
+
+        b = a / (cos(delta) + sin(delta) * tan(psi))
+
+    which is singular at psi = -(pi/2 - delta): there the forward beam runs parallel to
+    the wall and never reaches it. Approaching that angle, b runs away to infinity, so a
+    forward beam that misses the surface entirely and lands on something far behind is
+    indistinguishable from a wall raking away at just under the singular angle. The fit
+    reports a confident, badly wrong psi, and the follower steers on it.
+
+    Everything at or beyond this angle is unusable, so the accepted range has to stay
+    strictly inside it. The caller keeps a margin as well: at delta = 40 degrees the
+    singularity is at 50 degrees, and even 45 degrees still admits b = 8*a.
+    """
+    return 0.5 * math.pi - beam_separation
+
+
+class LapStart:
+    """Decides when the follower has settled onto the wall, so a lap can be measured.
+
+    The loop test compares a pose against the pose the lap started from, so that start
+    pose has to be one the robot will actually pass again: a point on the track the
+    follower settles into, at the heading it settles into.
+
+    Being at the right distance is not enough. A robot switched on pointing into the
+    room is momentarily at the setpoint distance while swinging round to face along the
+    wall, and a lap referenced to that pose is referenced to a heading the robot never
+    holds again -- it returns to the same place tens of degrees off and the heading gate
+    rejects a lap it really did complete.
+
+    So settling requires the wall fit as well: distance at the setpoint *and* running
+    parallel to the wall, held for `settle_ticks` consecutive ticks. The fit is what
+    supplies the heading, which is the part distance alone cannot see.
+
+    Latches: once settled, it stays settled, so a corner later in the lap cannot move
+    the reference the lap is being measured against.
+    """
+
+    def __init__(
+        self,
+        setpoint: float,
+        distance_tolerance: float,
+        angle_tolerance: float,
+        settle_ticks: int,
+    ) -> None:
+        self.setpoint = setpoint
+        self.distance_tolerance = distance_tolerance
+        self.angle_tolerance = angle_tolerance
+        self.settle_ticks = max(1, int(settle_ticks))
+        self.held = 0
+        self.ready = False
+
+    def update(
+        self,
+        state: str,
+        side_distance: Optional[float],
+        geometry: Optional[Tuple[float, float]],
+    ) -> bool:
+        """Feed one tick. True once the follower counts as settled on the wall."""
+        if self.ready:
+            return True
+        settled_now = (
+            state == 'following'
+            and side_distance is not None
+            and abs(side_distance - self.setpoint) <= self.distance_tolerance
+            and geometry is not None
+            and abs(geometry[1]) <= self.angle_tolerance
+        )
+        self.held = self.held + 1 if settled_now else 0
+        self.ready = self.held >= self.settle_ticks
+        return self.ready
+
+
 class LoopCloseDetector:
     """Decides when the robot has returned to its start, travelling the same way.
 

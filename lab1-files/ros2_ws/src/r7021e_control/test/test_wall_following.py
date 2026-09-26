@@ -10,7 +10,9 @@ import math
 import pytest
 
 from r7021e_control.wall_following import (
+    LapStart,
     LoopCloseDetector,
+    max_fittable_wall_angle,
     wall_geometry,
     WallFollowLaw,
 )
@@ -267,6 +269,64 @@ def test_an_out_and_back_along_one_wall_is_not_a_loop():
     for i in range(40, -1, -1):
         assert not detector.update(i * 0.05, 0.0, math.pi)
     assert detector.travelled > 2.0
+
+
+def test_the_beam_fit_is_singular_just_past_ninety_minus_the_separation():
+    # b = a / (cos(delta) + sin(delta)*tan(psi)) blows up at psi = -(90 - delta).
+    # Anything accepted near that angle is a forward beam that never touched the wall.
+    delta = math.radians(40.0)
+    assert max_fittable_wall_angle(delta) == pytest.approx(math.radians(50.0))
+
+    # A beam pair from 0.5 m off a 0.15 m pillar in turtlebot3_world: the perpendicular
+    # beam reads the pillar, the forward one misses it completely and lands on the far
+    # wall. The old 60 degree gate accepted this and steered on a 0.21 m "wall" that was
+    # really 0.50 m away, which is what drove the robot into tight orbits round the
+    # pillars. The 35 degree gate rejects it.
+    distance, psi = wall_geometry(0.30, 3.49, delta)
+    assert abs(psi) > math.radians(35.0)
+    assert abs(psi) < math.radians(60.0)
+    assert distance < 0.25
+
+
+def test_a_pillar_is_out_of_reach_of_the_forward_beam_at_the_setpoint():
+    # Why the fit cannot work on the pillars at all: the forward beam needs something
+    # at least rho*sin(delta) across to land on, and the pillars are 0.15 m.
+    delta = math.radians(40.0)
+    rho = 0.15 + SETPOINT
+    assert rho * math.sin(delta) > 0.15
+
+
+def test_lap_does_not_start_at_the_right_distance_with_the_wrong_heading():
+    # The robot is switched on pointing into the room. It sits at the setpoint distance
+    # for a moment while it swings round to face along the wall, and the old test took
+    # the lap reference right there -- so the lap was measured against a heading the
+    # robot never held again, and came back 52 degrees out of a 45 degree gate.
+    lap = LapStart(SETPOINT, 0.15, math.radians(15.0), settle_ticks=12)
+    for _ in range(50):
+        assert not lap.update('following', SETPOINT, (SETPOINT, math.radians(40.0)))
+
+
+def test_lap_starts_once_the_follower_is_parallel_and_holds_it():
+    lap = LapStart(SETPOINT, 0.15, math.radians(15.0), settle_ticks=12)
+    for _ in range(11):
+        assert not lap.update('following', SETPOINT, (SETPOINT, 0.0))
+    assert lap.update('following', SETPOINT, (SETPOINT, 0.0))
+
+
+def test_lap_start_needs_the_run_to_be_unbroken():
+    lap = LapStart(SETPOINT, 0.15, math.radians(15.0), settle_ticks=12)
+    for _ in range(11):
+        lap.update('following', SETPOINT, (SETPOINT, 0.0))
+    lap.update('corner', None, None)          # one corner resets the count
+    for _ in range(11):
+        assert not lap.update('following', SETPOINT, (SETPOINT, 0.0))
+
+
+def test_lap_start_latches_so_a_later_corner_cannot_move_the_reference():
+    lap = LapStart(SETPOINT, 0.15, math.radians(15.0), settle_ticks=2)
+    lap.update('following', SETPOINT, (SETPOINT, 0.0))
+    assert lap.update('following', SETPOINT, (SETPOINT, 0.0))
+    assert lap.update('corner', None, None)
 
 
 def test_the_same_path_closes_if_the_robot_turns_around_at_the_end():

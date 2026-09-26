@@ -14,6 +14,14 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
+# Recorded bags stay local. Each is tens of MB and regenerates from a run, so only the
+# plots and videos made from them are worth shipping. Kept here rather than in a scratch
+# directory so a bag survives the session that recorded it and can be replotted later:
+#
+#   lab1-files/ros2_ws/bags/task4-wall-sim/   task 4, one closed lap in turtlebot3_world
+#
+# The wildcard below already covers any bag directory dropped in here; the line is named
+# so it is obvious the bag is deliberately present and deliberately not pushed.
 /lab1-files/ros2_ws/bags/*
 !/lab1-files/ros2_ws/bags/.gitkeep
 !/lab1-files/ros2_ws/bags/*.png
@@ -28,6 +36,12 @@ __pycache__/
 !/lab3-files/ros2_ws/bags/.gitkeep
 !/lab3-files/ros2_ws/bags/*.png
 !/lab3-files/ros2_ws/bags/*.webm
+
+# Backstop for the rest of the tree: the rules above only guard the three bags
+# directories, and "ros2 bag record -o <name>" writes wherever it was run from. These
+# catch a recording that landed somewhere else before it can be pushed.
+*.mcap
+*.db3
 
 # editor and OS noise
 .vscode/

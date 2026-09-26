@@ -29,7 +29,13 @@ from sensor_msgs.msg import LaserScan
 
 from .geometry import yaw_from_quaternion
 from .scan_utils import beam_at, closest_point, sector_min
-from .wall_following import LoopCloseDetector, wall_geometry, WallFollowLaw
+from .wall_following import (
+    LapStart,
+    LoopCloseDetector,
+    max_fittable_wall_angle,
+    wall_geometry,
+    WallFollowLaw,
+)
 
 
 class WallFollowerNode(Node):
@@ -58,6 +64,9 @@ class WallFollowerNode(Node):
         self.declare_parameter('loop_close_tolerance', 0.2)
         self.declare_parameter('loop_min_distance', 2.0)
         self.declare_parameter('loop_close_heading_deg', 45.0)
+        self.declare_parameter('lap_settle_seconds', 0.6)
+        self.declare_parameter('lap_settle_angle_deg', 15.0)
+        self.declare_parameter('lap_settle_distance', 0.15)
         self.declare_parameter('stop_on_loop_close', True)
         self.declare_parameter('odom_timeout', 0.5)
         self.declare_parameter('cmd_frame_id', 'base_link')
@@ -85,6 +94,15 @@ class WallFollowerNode(Node):
             heading_tolerance=math.radians(
                 self.get_parameter('loop_close_heading_deg').value),
         )
+        control_period = self.get_parameter('control_period').value
+        self.lap_start = LapStart(
+            setpoint=self.get_parameter('wall_follow_setpoint').value,
+            distance_tolerance=self.get_parameter('lap_settle_distance').value,
+            angle_tolerance=math.radians(
+                self.get_parameter('lap_settle_angle_deg').value),
+            settle_ticks=round(
+                self.get_parameter('lap_settle_seconds').value / control_period),
+        )
 
         # Sector widths are written in degrees in YAML, since that is how anyone
         # reasons about a lidar sector, and converted once, here.
@@ -93,8 +111,24 @@ class WallFollowerNode(Node):
             self.get_parameter('wall_beam_separation_deg').value)
         self.beam_window = math.radians(
             self.get_parameter('wall_beam_window_deg').value)
-        self.max_wall_angle = math.radians(
-            self.get_parameter('max_wall_angle_deg').value)
+
+        # The fit is singular at 90 - separation degrees, where the forward beam runs
+        # parallel to the wall. Admitting angles near it is what lets a forward beam
+        # that missed a convex obstacle and flew on to something metres behind be read
+        # as a near wall raking away, so the accepted range is capped strictly inside
+        # the singularity whatever the YAML asks for.
+        requested = math.radians(self.get_parameter('max_wall_angle_deg').value)
+        usable = 0.8 * max_fittable_wall_angle(self.beam_separation)
+        self.max_wall_angle = min(requested, usable)
+        if requested > usable:
+            self.get_logger().warn(
+                'max_wall_angle_deg %.1f is too close to the %.1f degree singularity '
+                'for a %.1f degree beam separation; capping the fit at %.1f degrees'
+                % (math.degrees(requested),
+                   math.degrees(max_fittable_wall_angle(self.beam_separation)),
+                   math.degrees(self.beam_separation),
+                   math.degrees(self.max_wall_angle))
+            )
         self.front_width = math.radians(self.get_parameter('front_sector_width_deg').value)
         self.range_min = self.get_parameter('robot.scan_range_min').value
         self.range_max = self.get_parameter('robot.scan_range_max').value
@@ -115,7 +149,6 @@ class WallFollowerNode(Node):
 
         # Runs on its own timer, not the scan callback, so control rate is decoupled
         # from lidar rate (which differs between sim and the real robot).
-        control_period = self.get_parameter('control_period').value
         self.timer = self.create_timer(control_period, self.on_control_tick)
 
         self.get_logger().info(
@@ -234,20 +267,18 @@ class WallFollowerNode(Node):
             geometry,
         )
 
-        # The lap reference is taken on the first tick the follower is both in the
-        # following state and at its setpoint, not the node's start pose (the robot
-        # spawns mid-room, so it never returns there) and not the first following
-        # tick (still on the approach transient, off the path the lap settles onto).
-        if (
-            not self.following_started
-            and state == 'following'
-            and side_distance is not None
-            and abs(side_distance - self.law.setpoint) <= self.loop_detector.tolerance
-        ):
+        # The lap reference is the pose the loop test measures against, so it has to be
+        # a pose on the track the follower settles into -- at the setpoint distance and
+        # running parallel, held for long enough to be past the approach transient.
+        # Neither the node's start pose (the robot starts mid-room and never returns
+        # there) nor the first following tick (right distance, wrong heading) is one.
+        if not self.following_started and self.lap_start.update(
+                state, side_distance, geometry):
             self.following_started = True
             self.get_logger().info(
-                'lap reference set: on the %s wall at %.3f m'
-                % (self.law.follow_side, side_distance)
+                'lap reference set: settled on the %s wall at %.3f m, %.1f degrees off '
+                'parallel' % (self.law.follow_side, side_distance,
+                              math.degrees(geometry[1]))
             )
 
         if self.following_started and self.position is not None and not self.odom_is_stale():
