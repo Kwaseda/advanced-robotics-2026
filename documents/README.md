@@ -12,7 +12,9 @@ the other.
   obstacle.
 - **Lab 3** -- autonomous exploration: an RRT* planner written from scratch on the live
   SLAM map, frontier-based goal selection with an information gain, obstacle avoidance by
-  map inflation, and the loop that explores a maze until nothing is left to see.
+  map inflation plus a reactive check in the follower, and the loop that explores a maze
+  until nothing is left to see. In simulation it explores the full 7.3 m maze completely
+  in 11 to 13 minutes.
 
 ## Layout
 
@@ -67,12 +69,12 @@ ros2 launch r7021e_rrt_bringup lab3.launch.py sim:=true rviz:=true
 - [lab2-report-notes.md](lab2-report-notes.md) -- Lab 2's design decisions with the
   alternative that was rejected in each case, every measurement behind them, and the
   findings worth explaining rather than hiding. The Lab 2 report is written from this.
-- [lab3-guide.md](lab3-guide.md) -- the same for Lab 3, plus the simulation mazes, the
-  recording workflow and a troubleshooting section.
+- [lab3-guide.md](lab3-guide.md) -- the same for Lab 3, plus the simulation mazes, what a
+  good run looks like, the recording workflow and a troubleshooting section.
 - [lab3-report-notes.md](lab3-report-notes.md) -- Lab 3's design decisions with the
   rejected alternative in each case, the real-time problems worth explaining rather than
-  hiding, and what six simulation runs measured, including why every one of them stopped
-  with frontiers still on the map. The Lab 3 report is written from this.
+  hiding, the four faults that stopped runs short of the whole maze and how each was
+  found, and the final results. The Lab 3 report is written from this.
 - [planning-notes.md](planning-notes.md) -- design decisions and the reasoning behind
   the package structure, across all three labs.
 

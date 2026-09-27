@@ -662,6 +662,87 @@ def _propagate(node: RRTStarNode, cost: float, unknown_run: float) -> None:
         stack.extend(child.children)
 
 
+def look_around_target(
+    position: Point, yaw: float, radius: float, step: float
+) -> Point:
+    """The carrot that makes the supplied follower turn on the spot.
+
+    Here rather than in the node for the same reason `densify_path` is: it is
+    geometry, it needs no ROS, and a desk test can cover it.
+
+    The follower steers at a single waypoint. It sets angular velocity from the
+    heading error to that waypoint and forces linear velocity to zero whenever
+    the error exceeds 0.3 rad. So a waypoint held at a fixed large bearing off
+    the robot's own nose, recomputed against the current heading each cycle, is
+    a pure rotation command: the error never falls below `step`, the linear term
+    stays clamped, and the robot turns at its limit without translating.
+
+    `radius` is deliberately small. It does not control the turn, which depends
+    only on the bearing, and it bounds the damage if the caller stops
+    republishing part way round: the follower would then drive to a point a few
+    centimetres away and stop.
+    """
+    bearing = yaw + step
+    return (position[0] + radius * math.cos(bearing),
+            position[1] + radius * math.sin(bearing))
+
+
+def centre_path(
+    points: Sequence[Point],
+    grid,
+    max_shift_m: float,
+    iterations: int = 3,
+) -> list[Point]:
+    """Push a path away from obstacles, toward the middle of the free space.
+
+    This is the reactive half of the collision avoidance, and the lab's own
+    Task 3 names it first: "Reactive (APF), map inflation, risk heuristic, or
+    other. As long as the robot is ensured not to drive into walls due to the
+    RRT only considering the robot as a point." Map inflation alone was not
+    enough, and the measurements say why. Inflation is a hard constraint: it
+    forbids the collar and is indifferent between a path hugging the collar
+    boundary and one down the corridor's middle. RRT* then prefers the hugging
+    one, because it is shorter. Measured over the runs, the robot's median
+    distance to a real wall was 0.16 to 0.22 m in corridors whose half width is
+    0.35 to 0.45 m, so it drove closer to the walls than to the centre for the
+    whole run and had no margin left for the first thing to go wrong.
+
+    A potential field fixes exactly that. The repulsive term here is the
+    gradient of the clearance field, estimated by sampling the distance
+    transform either side of each waypoint, and each interior waypoint climbs it
+    a little. Endpoints are pinned: the first is where the robot is and the last
+    is the goal, and moving either would be answering a different question.
+
+    `max_shift_m` bounds the total displacement so a waypoint cannot be pushed
+    into a different corridor, and a step is rejected outright if it lands
+    somewhere blocked, so this can only ever return a path the planner would
+    also have accepted.
+    """
+    if len(points) < 3 or max_shift_m <= 0.0:
+        return list(points)
+    probe = grid.info.resolution
+    out = [tuple(p) for p in points]
+    for _ in range(max(1, iterations)):
+        for i in range(1, len(out) - 1):
+            x, y = out[i]
+            here = grid.clearance((x, y))
+            gx = grid.clearance((x + probe, y)) - grid.clearance((x - probe, y))
+            gy = grid.clearance((x, y + probe)) - grid.clearance((x, y - probe))
+            norm = math.hypot(gx, gy)
+            if norm < 1e-9:
+                continue
+            step = min(probe, max_shift_m / max(iterations, 1))
+            candidate = (x + step * gx / norm, y + step * gy / norm)
+            if _distance(candidate, points[i]) > max_shift_m:
+                continue
+            if grid.is_blocked(candidate):
+                continue
+            if grid.clearance(candidate) <= here:
+                continue
+            out[i] = candidate
+    return out
+
+
 if __name__ == "__main__":
     # A room with one wall and a gap in it, at the SLAM map's real resolution.
     # If the planner cannot solve a fake room it will not solve a real one.

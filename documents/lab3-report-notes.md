@@ -381,3 +381,219 @@ heading error and then clipped at `max_w`. Lowering the clip does not make the r
 more gently along its path. It makes the robot unable to correct heading fast enough at a
 corner, so it leaves the corridor. Anyone tempted by this parameter should know it has been
 tried once and measured, and that lowering it is not the improvement it looks like.
+
+## 16. Task 3 was answered with half an answer
+
+The task lists the options as "Reactive (APF), map inflation, risk heuristic, or other" and
+states the requirement as an outcome: "as long as the robot is ensured not to drive into
+walls due to the RRT only considering the robot as a point". We did inflation, and stopped.
+
+Inflation is a statement about the map, and the map is wrong exactly when it matters.
+Measured against the simulator's ground truth pose and the world file, the robot's
+footprint overlapped a real wall for between 3.2 and 60.2 percent of a run. The task was
+not met on its own terms, and no amount of tuning the radius would have met it, because the
+quantity being inflated is not the quantity that was wrong.
+
+## 17. The reactive check existed and ran fifty times too slowly
+
+There was already a stop in `navigation_node`: if the nearest laser return inside a forward
+sector is under `safety_stop_distance`, 0.18 m, stop and retire the goal. It essentially
+never fired in time, and the arithmetic says why. It lives in the planning tick, which runs
+at `replan_period`, 1.0 s. The robot drives at `max_v`, 0.15 m/s. So it covers 0.15 m
+between consecutive checks against an 0.18 m threshold, and gets about one sample inside
+the band it is supposed to catch.
+
+Read off a recorded run, one second apart, with the commanded velocity alongside:
+
+| t | true clearance | commanded v |
+|---|---|---|
+| 63.9 s | 0.450 m | 0.150 m/s |
+| 64.9 s | 0.400 m | 0.097 m/s |
+| 65.9 s | 0.250 m | 0.149 m/s |
+| 66.9 s | 0.100 m | 0.150 m/s |
+
+A head-on approach to a real wall at full commanded speed, and the 0.25 to 0.10 m step is
+one planner tick. The check was correct. It was in the wrong loop.
+
+The reactive layer now lives in the follower, which runs at 10 Hz against a 5 Hz scan:
+0.015 m of travel per cycle. Full speed above 0.30 m of clearance, tapering to zero at
+0.18 m, measured along the heading to anything inside the strip the body is about to
+sweep (section 24). Angular velocity is untouched, because a robot that
+cannot turn away from a wall it has stopped in front of has not stopped, it has parked
+against it.
+
+The general lesson is worth more than the fix: a safety check has a deadline, and the
+deadline is set by the speed of the thing it is protecting against, not by the convenience
+of the loop it was easy to write it in.
+
+## 18. Two of our own measurements were wrong, both flattering the worst runs
+
+**Coverage was counted off the SLAM map.** "Free area explored" summed free cells in the
+final occupancy grid. That grid contains mapped walls at up to 2.5 times their true area
+and, in the bad runs, large regions that do not exist. Free cells in a map that has drifted
+are free cells in a room that is not there. Compared that way, one run looked 71 percent
+ahead of another; measured against the maze that actually exists, it had covered slightly
+less.
+
+Coverage is now computed from the ground truth pose and the world file with no SLAM in it:
+rasterise true free space, flood fill to exclude the apron outside the outer wall, then for
+every pose raycast the LiDAR's own field of view at one degree to 3.5 m, each beam stopping
+at the first occupied cell. The denominator for the course-width maze is 22.41 m2.
+
+**"Phantom walls" was mostly wall thickening.** The measure called a mapped cell phantom
+unless that exact cell sat inside a wall box. Checked against a run that finished with one
+degree of odometry error and never touched a wall, it still reported 84.9 percent phantom,
+which cannot be a description of that map. It was summing three unrelated things:
+registration, worth about 13 points on its own; thickening, because slam_toolbox marks the
+hit cell of every beam endpoint from both faces of a wall over hundreds of scans, which is
+ordinary; and actual fiction. They are now reported separately, as a thickening ratio and
+as the fraction of mapped wall cells more than 0.30 m from any true wall.
+
+Both corrections point the same way, and it is the same lesson as the loop-closure lines in
+the trajectory plots: a derived metric with no independent check agrees with whatever it is
+compared against. Ground truth is the only thing in this project that has not needed
+correcting, because it is the only thing not computed from something the robot believed.
+
+## 19. Time to explore has to be measured against the maze, not against the run
+
+"Time to 90 percent of what this run achieved" rewards giving up. A run that reaches
+60 percent and stops hits 90 percent of its own total sooner than a run that goes on to
+finish the maze. The competition scores time to full exploration and time to 90 percent of
+the maze, so the denominator is the maze.
+
+The difference is not cosmetic. On the self-referential measure, replacing the follower
+looked like halving the time to 90 percent, 95.9 s to 51.0 s. Against a fixed denominator
+the same pair of runs reads: half the maze in half the time, then behind, 164 s against
+103 s to two thirds, and neither ever past it.
+
+## 20. Loop closure is off, because the maze defeats it
+
+**Chosen:** `do_loop_closing: false` in slam_toolbox.
+
+**Rejected:** loop closure on, as the course configuration ships it.
+
+**Why:** a perfect maze is made of identical corridors at a fixed pitch, and one junction's
+360 degree scan matches another's. Measured against the simulator's ground truth pose on
+the full maze: the SLAM pose stayed within 0.09 m of the truth for the first 125 s, then
+the first loop closure the solver accepted moved it 1.7 m in one step, and it stayed
+exactly 1.7 m out for the rest of the run. The map was redrawn with its eastern half laid
+over its western half, slam_toolbox then published no change to the map for 70 s while the
+robot kept driving, and exploration ended at 29.6 percent of the maze with only six
+frontier clusters left. Those frontiers were not missing because of the exploration layer;
+the map simply stopped changing.
+
+With loop closure off, three runs with otherwise identical settings reached 88.0 to 91.2
+percent, and scan matching kept the pose within 0.37 m of the truth over 600 s.
+
+**Cost:** pose graph SLAM without loop closure is scan matching plus a graph that never
+closes, and the report has to say so. The defence is the measurement above: in this
+environment a closure is more likely to be wrong than right, and one wrong closure costs
+the run. On the real robot the question is whether odometry drift stays small enough over
+one run; see the guide's notes on watching a revisited corridor.
+
+## 21. The planning retry has to raise the iteration cap, not just the clock
+
+**Chosen:** when no candidate is reachable at the normal budget, replan every candidate
+once with both `max_iterations` and `max_plan_time` multiplied by 20 (30000 iterations,
+3 s).
+
+**Rejected:** multiplying only the time budget, which is what the retry originally did.
+
+**Why:** the planner stops at whichever cap it meets first, and at 1500 iterations it meets
+that one in about 0.08 s, well inside its 0.15 s clock. A clock-only retry therefore changed
+nothing at all. It went unnoticed until the full maze, where the last frontiers were 2.6 to
+3.4 m from the robot in a straight line but 15 and 27 m away along the corridors, with one
+cell of clearance at the narrowest point. Replayed on the recorded map:
+
+| budget | goal 15 m along | goal 27 m along |
+|---|---|---|
+| 1500 iterations, 0.15 s | 0/10 | 0/10 |
+| 1500 iterations, 0.60 s (old retry) | 0/10 | 0/10 |
+| 15000 iterations, 1.5 s | 10/10 | 0/10 |
+| 30000 iterations, 3.0 s | 10/10 | 8 to 9/10 |
+
+**Cost:** a cycle that needs the retry can spend up to 3 s per candidate planning. It only
+happens when the alternative is the give-up ladder, and the follower keeps its own reactive
+check running meanwhile. This is also the strongest argument in the report for the
+next-best-view alternative in section 4: a tree grown once from the robot would not have to
+rediscover a 27 m route per candidate.
+
+## 22. A goal must not depend on where the robot happens to stand
+
+**Chosen:** when a frontier cluster's centroid is not free, take the roomiest free cell of
+the cluster itself, preferring cells connected to the robot through mapped free space, and
+only then fall back to walking from the centroid toward the robot.
+
+**Rejected:** the walk toward the robot as the first fallback.
+
+**Why:** the walk depends on the robot's position. For one frontier it found free space
+within its 0.5 m cap from some robot positions and not from others, so the goal existed on
+one cycle and vanished on the next, and the robot drove back and forth between it and a
+frontier 20 m the other way for 500 s. The cluster's own cells are where the frontier is
+seen from and do not move with the robot. Preferring the robot's connected region matters
+because a cluster can straddle a strip of unknown: the roomiest cell of one leftover
+cluster sat beyond 0.55 m of unknown, more than the planner's 0.50 m allowance, so it
+failed every cycle until cells on the robot's side were ranked first.
+
+## 23. Two safety checks on the same line cancelled each other
+
+**Chosen:** the navigation node's own laser stop is disabled (`safety_stop_distance: 0.0`);
+the follower's check is the reactive layer.
+
+**Why:** the follower tapers forward speed to zero at 0.18 m, so it parks the robot exactly
+on the navigation node's 0.18 m trip line. That check then fired on every new path before
+the follower could turn away, and each time it retired the goal. One run stood facing a
+wall at 0.17 to 0.19 m for 20 s, retired four frontiers that way, including every distant
+one, and parked at 65.6 percent. The follower already refuses forward motion inside
+0.18 m while still allowing a turn on the spot, which is the way out.
+
+## 24. The reactive check watches a strip, not a cone
+
+**Chosen:** the follower measures the distance ahead, along its heading, to the nearest
+laser return within 0.10 m either side of its centre line, and applies the 0.30 m taper and
+0.18 m stop to that.
+
+**Rejected:** the nearest return inside a 0.6 rad cone, and wider strips.
+
+**Why:** a cone is blind to a wall corner passing at 45 to 90 degrees, which is where a
+corner is as the robot pulls away from it after turning. In one recorded run the cone read
+0.7 m clear while a corner at -45 to -53 degrees closed to the LiDAR's 0.12 m minimum at
+full speed, and the robot hit it. The width is a measured trade, replayed on recorded scans:
+
+| rule | stops before the two recorded contacts | blocked in a narrow dead end | blocked over a clean full run |
+|---|---|---|---|
+| cone, 0.6 rad | neither | 7.4 s | 11.0 s |
+| strip, 0.12 m | both, 3 to 4 s early | 67.8 s | 23.6 s |
+| strip, 0.10 m | both, 1.4 to 2.3 s early | 10.2 s | 16.8 s |
+| strip, 0.09 m | neither | 3.0 s | 15.6 s |
+
+At 0.12 m the strip also caught a wall the robot was sliding past 0.118 m to its side,
+which read as ahead, refused forward motion with the path pointing straight on, and
+deadlocked the robot in a dead end until every goal in reach was retired.
+
+**Remaining gap:** the strip only looks ahead. With it in place, the closest approaches in
+the final runs were 0.100 m, 0.120 m and 0.100 m against a 0.113 m circumscribing radius,
+each a corner beside the robot as it turned past, lasting well under a second. Those are
+possible grazes that the measurement (a circle, on a 0.02 m grid, no contact sensor)
+cannot confirm or rule out. A corner of the body swept while turning is not protected by
+anything.
+
+## 25. Results on the full maze, final configuration
+
+Three consecutive runs in simulation on the 7.3 m maze, 45.29 m2 of corridor, coverage
+and clearance measured from ground truth:
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| true coverage | 100.0% | 100.0% | 100.0% |
+| exploration complete at | 686 s | 769 s | 665 s |
+| closest approach to a real wall | 0.100 m | 0.120 m | 0.100 m |
+| largest SLAM pose error | 0.32 m | 0.24 m | 0.28 m |
+
+Each run ended on its own, with no frontier cluster left on the map. Before sections 20
+to 24, sixteen runs of earlier configurations on the same maze ranged from 29.6 to 100
+percent, and every short one had a different cause; the four failures fixed above were
+found one run at a time, each by reading the recorded bag rather than by rerunning.
+
+None of this has been run on a physical Burger yet. Hardware results replace these
+numbers.

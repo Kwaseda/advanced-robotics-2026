@@ -232,7 +232,8 @@ class PlanningGrid:
 
     __slots__ = ("info", "blocked", "known_free", "unknown", "occupied",
                  "inflation_radius_m", "stamped_radius_m", "occupied_threshold",
-                 "min_obstacle_neighbours")
+                 "min_obstacle_neighbours", "_clearance_m",
+                 "_known_free_labels", "_region_cache")
 
     def __init__(
         self,
@@ -270,6 +271,30 @@ class PlanningGrid:
         # collar is not "free with a caveat", it is somewhere the robot may not go.
         self.unknown = raw_unknown & ~self.blocked
         self.known_free = ~raw_unknown & ~self.blocked
+        # Built on first use. Most cycles never ask for it.
+        self._clearance_m = None
+        self._known_free_labels = None
+        self._region_cache = None
+
+    def clearance(self, point: Point) -> float:
+        """Distance in metres from `point` to the nearest blocked cell.
+
+        Built once, lazily, as a distance transform of `blocked`, because goal
+        selection asks this of every candidate every cycle and a per-query
+        search would be the expensive part of the loop.
+
+        Off the grid counts as zero clearance rather than infinite: a point
+        outside the map is not a place to send the robot.
+        """
+        if self._clearance_m is None:
+            from scipy import ndimage
+            self._clearance_m = (ndimage.distance_transform_edt(~self.blocked)
+                                 * self.info.resolution)
+        cell = self.info.world_to_cell(point)
+        if not self.info.contains_cell(cell):
+            return 0.0
+        col, row = cell
+        return float(self._clearance_m[row, col])
 
     def classify_point(self, point: Point) -> int:
         """-1 blocked, 0 unknown, 1 known free. Off-map counts as blocked.
@@ -337,6 +362,32 @@ class PlanningGrid:
         """
         reachable = self.reachable_free_points(point, radius_m)
         return reachable[-1][1] if reachable else None
+
+    def known_free_region(
+        self, point: Point, radius_m: float = 0.60
+    ) -> npt.NDArray[np.bool_] | None:
+        """Known-free cells 8-connected to `point`, or None if no known-free start
+        lies within `radius_m`. A blocked `point` is moved as the planner moves its
+        root. Labelled once per grid; the last answer is cached.
+        """
+        if self._known_free_labels is None:
+            from scipy import ndimage
+            self._known_free_labels, _ = ndimage.label(
+                self.known_free, structure=np.ones((3, 3), dtype=bool))
+        if self._region_cache is not None and self._region_cache[0] == (point, radius_m):
+            return self._region_cache[1]
+        start = point if self.is_known_free(point) else None
+        if start is None:
+            for _, candidate in self.reachable_free_points(point, radius_m):
+                if self.is_known_free(candidate):
+                    start = candidate
+                    break
+        region = None
+        if start is not None:
+            col, row = self.info.world_to_cell(start)
+            region = self._known_free_labels == self._known_free_labels[row, col]
+        self._region_cache = ((point, radius_m), region)
+        return region
 
     def reachable_free_points(
         self, point: Point, radius_m: float

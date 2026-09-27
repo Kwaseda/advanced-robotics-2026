@@ -29,15 +29,16 @@ Decisions already locked in for this lab (from the plan conversation):
   "Plan path to all g_c,i ... travel along minimum p*." Affordable because
   the lab instructions say compute time is not graded.
 
-The information gain
---------------------
+Two things the skeleton left open, settled 2026-09-23
+------------------------------------------------------
 I(p) is the number of frontier cells within `radius_m` of the candidate goal,
 counted across the WHOLE frontier grid rather than within the candidate's own
 cluster, with `radius_m` far below the Burger's 3.5 m LiDAR range. That is the
 lab instructions' own tip, verbatim: "greatly reduce the LiDAR range for info
 gain computation to drive exploratory behavior". Counting only the candidate's
-own cluster is available as `mode="cluster_size"`, so the two can be measured against
-each other on the same maze rather than argued about.
+own cluster is available as `mode="cluster_size"` so the two can be measured
+against each other rather than argued about, and the report carries the
+measurement.
 
 The reduced-range form also fixes something plain cell count gets wrong.
 Two clusters twenty centimetres apart each score their own size and neither
@@ -69,6 +70,36 @@ Point = tuple[float, float]
 Cell = tuple[int, int]
 
 FRONTIER_VALUE = 100  # what frontier_detector_node.py writes into its output
+
+# How much further past the first free cell to keep looking for a roomier
+# goal. Half a corridor width: far enough to leave a wall, near enough that
+# the goal still belongs to the frontier that generated it.
+GOAL_CLEARANCE_WALKBACK_M = 0.35
+
+# How far the fallback may walk from a blocked centroid before giving up on the
+# cluster entirely. A goal is meant to be a viewpoint of its own frontier, and a
+# point further than this from the cluster is not one.
+#
+# Without the cap the walk ran the whole way to the robot. On a map whose walls
+# are drawn about 2.5 times too thick, a frontier centroid's entire neighbourhood
+# is often blocked, so the walk terminated at the robot's feet. Replaying four
+# recorded runs through this function: 11 of 13 clusters in one cycle produced
+# goal points inside a 0.6 m blob around the robot, 1.0 to 3.0 m from their own
+# cluster, and between 27 and 45 percent of all cluster instances across the runs
+# produced a goal seeing zero frontier cells. Under this cap, none do.
+#
+# Those detached goals then won, because select_best_frontier keeps the six
+# NEAREST candidates before scoring and a goal at the robot's feet is the nearest
+# thing there is. H collapses to its distance term, the robot drove four
+# centimetres, declared arrival inside the 0.20 m tolerance, and retired a 0.30 m
+# exhaustion disc around where it already stood. Once those discs covered the
+# track every cluster was filtered out before planning, which is the code path
+# that logs "N clusters found, 0 unreachable". Eight of sixteen runs ended there.
+#
+# 0.5 m is a little over the 0.35 m clearance walkback and well inside the 0.75 m
+# gain radius, so a goal that survives it still sees its own frontier.
+# Evidence tier: replay, 2026-09-25.
+GOAL_WALKBACK_MAX_M = 0.5
 
 # I(p) forms. Strings rather than an enum because they arrive from a YAML file
 # and are echoed back into the report, and a string that matches the report's
@@ -103,6 +134,9 @@ class GainConfig:
     mode: str = MODE_REDUCED_RANGE
     radius_m: float = 0.75
     weight_m_per_cell: float = 0.10
+    # Metres of equivalent path charged per radian the robot must turn before it
+    # can start down a candidate path. Zero disables it.
+    turn_cost_m_per_rad: float = 0.0
 
     def __post_init__(self) -> None:
         if self.mode not in (MODE_REDUCED_RANGE, MODE_CLUSTER_SIZE):
@@ -202,17 +236,21 @@ def find_frontier_clusters(
 
     8-neighbourhood BFS, and the difference from 4 is not cosmetic.
 
-    frontier_detector_node.py uses a 4-neighbourhood for a different question:
-    whether one free cell is adjacent to unknown space. Grouping frontier cells
-    into boundaries is a separate question, and a boundary that runs diagonally
-    is still one boundary.
+    frontier_detector_node.py uses a 4-neighbourhood, but for a different
+    question: whether a free cell is *adjacent to unknown*, which is a statement
+    about that one cell. Grouping frontier cells into boundaries is a second,
+    separate question, and a boundary that runs diagonally is still one boundary.
 
     Under 4-connectivity a diagonal run of frontier cells is not a cluster at
-    all; it is N clusters of one cell, every one below `min_size` and discarded
-    as noise. The robot then reports zero clusters and declares the maze explored
-    while looking straight at a frontier. Diagonal frontiers are the normal case,
-    not an edge case: the boundary of what a rotating LiDAR has seen is a curve,
-    and a curve on a grid is a staircase.
+    all; it is N clusters of one cell each, every one of them below `min_size`
+    and therefore discarded as noise. That is not hypothetical. On
+    lab3_maze_small the run terminated with roughly ten frontier cells still
+    visible in RViz, stepping diagonally across the map's lower left, and the
+    node correctly reported zero clusters and declared the maze explored with
+    the entire right half of it unmapped. Diagonal frontiers are the normal case
+    rather than an edge case, because the boundary of what a rotating LiDAR has
+    seen is a curve, and a curve on a grid is a staircase.
+    Evidence tier: sim, lab3_maze_small, 2026-09-23.
 
     `max_size` stops a cluster growing, it does not discard it. The remaining
     cells of an oversized frontier are picked up by the next BFS as separate
@@ -230,11 +268,14 @@ def find_frontier_clusters(
     clusters: list[FrontierCluster] = []
 
     # `remaining` is the single source of truth for what is still unclustered, and
-    # the outer loop re-reads it rather than walking a list taken once at the
-    # start. That matters because of the cap: a cluster that stops at max_size
-    # releases the cells it queued but never popped, and with a fixed scan order
-    # any released cell earlier in that order would never be seen again. A long
-    # corridor frontier would quietly lose its first chunk.
+    # the outer loop re-reads it every time rather than walking a list of cells
+    # taken once at the start. That matters only because of the cap: a cluster
+    # that stops at max_size puts the cells it queued but never popped back into
+    # `remaining`, and with a precomputed scan order any released cell earlier in
+    # that order would never be looked at again. The result is a long corridor
+    # frontier that quietly loses its first chunk, which is invisible in a total
+    # cell count and shows up as a robot that will not go back for a gap it
+    # already walked past.
     while True:
         pending = np.argwhere(remaining)
         if pending.size == 0:
@@ -267,15 +308,17 @@ def cluster_goal_point(
     """
     Centroid of the cluster's cells, converted to world coordinates.
 
-    Fallback: if the centroid is not known-free in `grid`, walk from it toward
-    `robot_pos` one cell at a time until a known-free point is found, and return
-    that instead. Concave clusters make plain centroids land on walls more often
+    Fallbacks, in order, when the centroid is not known-free in `grid`: the
+    roomiest known-free cell of the cluster itself, then a walk from the centroid
+    toward `robot_pos` one cell at a time until a known-free point is found. Concave clusters make plain centroids land on walls more often
     than you would expect: a frontier wrapping around a corner has its centroid
     inside the corner.
 
-    Returns None when the whole walk back to the robot finds nothing free, which
-    means the cluster is behind an inflated wall. The caller drops the candidate
-    rather than handing the planner a goal it cannot reach.
+    The walk is capped at `GOAL_WALKBACK_MAX_M`. Returns None when nothing free
+    is found inside it, which means the cluster is behind an inflated wall. The
+    caller drops the candidate rather than handing the planner a goal that is not
+    a viewpoint of the frontier it came from. See the constant for what happened
+    when the walk was uncapped.
 
     Note which grid this uses: the inflated `PlanningGrid`, not the raw map. A
     goal that is free on the raw map but inside a wall's inflation collar is a
@@ -291,19 +334,58 @@ def cluster_goal_point(
     if grid.is_known_free(centroid):
         return centroid
 
+    # The cluster's own cells do not depend on where the robot stands, so the goal
+    # stays put between cycles. Cells reachable through mapped space rank first,
+    # because a cluster can straddle a strip of unknown the planner may not cross.
+    region = grid.known_free_region(robot_pos)
+    own: Point | None = None
+    own_rank = (False, -1.0)
+    for cell in cluster.cells:
+        probe = info.cell_to_world(cell)
+        if grid.is_known_free(probe):
+            rank = (region is not None and bool(region[cell[1], cell[0]]),
+                    grid.clearance(probe))
+            if rank > own_rank:
+                own, own_rank = probe, rank
+    if own is not None:
+        return own
+
     dx = robot_pos[0] - centroid[0]
     dy = robot_pos[1] - centroid[1]
     distance = math.hypot(dx, dy)
     if distance < 1e-9:
         return None
     step = info.resolution
-    steps = int(distance / step)
+    # Bounded by the cap as well as by the robot, so a cluster whose surroundings
+    # are all blocked is dropped rather than turned into a goal somewhere else.
+    steps = int(min(distance, GOAL_WALKBACK_MAX_M) / step)
+    # Walk back toward the robot and take the first known-free point, then keep
+    # walking a little further and take the roomiest point found instead.
+    #
+    # The first free point is, by construction, the one closest to whatever
+    # blocked the centroid, so it sits against a wall with the bare collar for
+    # clearance. Measured in simulation, that is where the robot was sent and
+    # where it drove into the real wall: every failed run made first contact
+    # within a few centimetres of the same frontier goal. The collar is
+    # computed from the map, and at a frontier the map is exactly where it is
+    # least trustworthy, so a goal that merely clears the collar clears nothing
+    # reliable. Preferring the roomiest point costs a fraction of a metre of
+    # travel and moves the goal off the wall.
+    best: Point | None = None
+    best_clearance = -1.0
+    extra = int(GOAL_CLEARANCE_WALKBACK_M / step)
     for i in range(1, steps + 1):
         t = (i * step) / distance
         probe = (centroid[0] + dx * t, centroid[1] + dy * t)
         if grid.is_known_free(probe):
-            return probe
-    return None
+            room = grid.clearance(probe)
+            if room > best_clearance:
+                best, best_clearance = probe, room
+            if best is not None:
+                extra -= 1
+                if extra <= 0:
+                    return best
+    return best
 
 
 def information_gain(
@@ -320,16 +402,18 @@ def information_gain(
     the form the report's equations describe.
 
     `cluster_size`: the candidate's own cell count, the simpler form the
-    simpler alternative. Kept so the two can be compared on the same maze.
+    skeleton proposed. Kept so the two can be compared on the same maze rather
+    than argued about on a slide.
     """
     if config.mode == MODE_CLUSTER_SIZE:
         return float(cluster.size())
     return float(field_.count_within(goal, config.radius_m))
 
 
-def score_path(path: list[Point], info_gain: float, config: GainConfig) -> float:
+def score_path(path: list[Point], info_gain: float, config: GainConfig,
+               robot_yaw: float | None = None) -> float:
     """
-    H(p) = sum(d(p)) - w * I(p). Lower is better; the caller takes the minimum.
+    H(p) = sum(d(p)) + t * |turn| - w * I(p). Lower is better.
 
     d(p) is the sum of straight-line distances between consecutive waypoints of
     the REAL path RRT* returned, not a straight line to the cluster. That is
@@ -340,8 +424,27 @@ def score_path(path: list[Point], info_gain: float, config: GainConfig) -> float
     subtracts a cell count from a distance and those are not the same unit. A
     report that writes H = sum(d) - I without saying what converts them has an
     equation that cannot be evaluated.
+
+    The turn term is the same argument applied again. Two candidates 2 m away,
+    one straight ahead and one directly behind, cost the same in d and are not
+    the same cost, because the robot has to stop and swing 180 degrees to start
+    on the second. `turn_cost_m_per_rad` converts that rotation into the metres
+    it displaces: at `max_v` 0.15 m/s and `max_w` 1.0 rad/s the robot covers
+    0.15 m in the time it takes to turn one radian, so 0.15 is the value with a
+    derivation rather than a preference behind it, and a half turn then costs
+    0.47 m of equivalent path.
+
+    Only the first segment is charged. Turns further along the path are real
+    costs too, but they are costs the path already has regardless of which
+    candidate wins, and charging them would penalise a long path twice.
     """
-    return _path_length(path) - config.weight_m_per_cell * info_gain
+    cost = _path_length(path) - config.weight_m_per_cell * info_gain
+    if (robot_yaw is not None and config.turn_cost_m_per_rad > 0.0
+            and len(path) >= 2):
+        heading = math.atan2(path[1][1] - path[0][1], path[1][0] - path[0][0])
+        turn = abs(math.remainder(heading - robot_yaw, 2.0 * math.pi))
+        cost += config.turn_cost_m_per_rad * turn
+    return cost
 
 
 def select_best_frontier(
@@ -358,6 +461,8 @@ def select_best_frontier(
     commit_match_radius_m: float = 0.30,
     exhausted_goals: Sequence[Point] = (),
     exhaust_radius_m: float = 0.30,
+    robot_yaw: float | None = None,
+    retry_plan_time_scale: float = 0.0,
 ) -> ExplorationDecision:
     """
     Main entry point, called from navigation_node.py's planning tick.
@@ -379,9 +484,10 @@ def select_best_frontier(
        beats it by more than `switch_margin`.
     7. Return the winner, and every candidate that was scored, for the markers.
 
-    Every tuning number is an explicit argument rather than a default buried
-    here, so that it lives in the YAML file and can be read back off a running
-    node with `ros2 param get`.
+    The signature grew past the skeleton's four arguments because every one of
+    the extra ones is a number the report has to state. Passing them explicitly
+    keeps them in the YAML file, where they can be read back off a running node,
+    rather than as defaults buried in a function nobody launches.
     """
     config = config if config is not None else GainConfig()
 
@@ -430,16 +536,56 @@ def select_best_frontier(
     candidates: list[Candidate] = []
     for cluster, goal in goals:
         gain = information_gain(cluster, goal, field_, config)
+        # A goal that sees none of its own frontier is not an exploration goal.
+        # It can only be an artefact of goal placement, and it beats every real
+        # candidate because H collapses to its distance term. Dropping it here
+        # rather than scoring it is the difference between the robot driving to a
+        # frontier and the robot driving four centimetres to a point it is
+        # already standing on.
+        if gain <= 0.0:
+            continue
         candidate = Candidate(cluster=cluster, goal=goal, info_gain=gain)
         result = planner.plan(robot_pose, goal)
         if result.path is not None:
             candidate.path = result.path
             candidate.path_length = result.length
-            candidate.score = score_path(result.path, gain, config)
+            candidate.score = score_path(result.path, gain, config, robot_yaw)
             candidate.edges = result.edges
         candidates.append(candidate)
 
     reachable = [c for c in candidates if c.reachable]
+
+    # Nothing reachable inside the ordinary budget is not the same statement as
+    # nothing reachable. RRT* is probabilistically complete, so a failure at
+    # 0.15 s of sampling is a failure to find a path in 0.15 s, and the cost of
+    # believing it is the run: a cycle with no reachable candidate is what starts
+    # the look-around, the unstick, and eventually the termination countdown.
+    #
+    # The replan period is 1.0 s and six candidates at 0.15 s use at most 0.9 s
+    # of it, so on the cycles where it matters there is budget sitting unused.
+    # This spends it, once, only when the alternative is giving up.
+    # Both caps scale: at 1500 iterations the planner stops before its clock does,
+    # so scaling only the clock changed nothing.
+    if not reachable and retry_plan_time_scale > 1.0:
+        budget = planner.max_plan_time_s
+        iterations = planner.max_iterations
+        planner.max_plan_time_s = budget * retry_plan_time_scale
+        planner.max_iterations = int(iterations * retry_plan_time_scale)
+        try:
+            for candidate in candidates:
+                result = planner.plan(robot_pose, candidate.goal)
+                if result.path is not None:
+                    candidate.path = result.path
+                    candidate.path_length = result.length
+                    candidate.score = score_path(result.path,
+                                                 candidate.info_gain, config,
+                                                 robot_yaw)
+                    candidate.edges = result.edges
+        finally:
+            planner.max_plan_time_s = budget
+            planner.max_iterations = iterations
+        reachable = [c for c in candidates if c.reachable]
+
     if not reachable:
         return ExplorationDecision(None, candidates, len(clusters))
 

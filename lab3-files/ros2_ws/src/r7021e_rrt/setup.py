@@ -19,10 +19,13 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # One node, one entry point, one file that exists. Last year's lab2_pkg
-            # registered five entry points for files that were not there, which builds
-            # clean and fails at run time.
+            # Every entry point here names a file that exists.
+            #
+            # The follower is ours rather than the course's, and the launch file
+            # takes `follower:=course` to run the supplied one instead. Both are
+            # kept so the two can be compared in a single run of the stack.
             'navigation_node = r7021e_rrt.navigation_node:main',
+            'path_follower_node = r7021e_rrt.path_follower_node:main',
         ],
     },
 )

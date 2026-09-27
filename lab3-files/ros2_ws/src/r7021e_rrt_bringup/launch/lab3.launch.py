@@ -41,12 +41,18 @@ Lab 1's controller_node and Lab 2's mpc_node. Both publish /cmd_vel, and so does
 the path follower started here. Two publishers on one /cmd_vel do not error, they
 interleave, and the robot does something that looks like a tuning problem.
 
-The frontier detector and the path follower come from the course's own
-r7021e_exploration package, unmodified, which is what the lab intends: "Your
-focus in this lab is only on the path planner, and on the exploration method."
-That package must be installed in the workspace alongside this one; the lab
-instructions say to extract it into ~/ros2_ws/src, and this file assumes it has
-been.
+The frontier detector comes from the course's own r7021e_exploration package,
+unmodified. That package must be installed in the workspace alongside this one;
+the lab instructions say to extract it into ~/ros2_ws/src, and this file assumes
+it has been, because `follower:=course` starts its follower too.
+
+The follower does not, by default. The lab says "your focus in this lab is only
+on the path planner, and on the exploration method", and it also says "you are
+allowed to modify the nodes as you feel is needed". The supplied law spends
+between 45 and 62 percent of a run turning on the spot, measured off recorded
+runs, and the competition is scored on time. So the default is ours and
+`follower:=course` runs theirs, which keeps the comparison available rather than
+asserting the result of it.
 
 The frontier topic is remapped here. frontier_detector_node publishes on
 `frontiers`, plural, and navigation_node subscribes to the same name, so the
@@ -68,7 +74,11 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -117,6 +127,21 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'follower_max_w', default_value='1.0',
             description="path follower's angular speed limit, rad/s"),
+        # Which following law drives the wheels. `rrt` is ours, `course` is the
+        # supplied one, and the two are launched identically otherwise so a run
+        # of each differs in the control law and nothing else.
+        DeclareLaunchArgument(
+            'follower', default_value='rrt', choices=['rrt', 'course'],
+            description='which path follower to run'),
+        # Both halves of the reactive layer. Setting only the stop distance to
+        # zero is NOT a disable: the taper still runs, scaled from slow_distance
+        # down to zero. Turning the layer off means both at 0.0.
+        DeclareLaunchArgument(
+            'follower_stop_distance', default_value='0.18',
+            description='reactive hard stop distance, m'),
+        DeclareLaunchArgument(
+            'follower_slow_distance', default_value='0.30',
+            description='reactive taper distance, m. Both at 0.0 disables it'),
     ]
 
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -156,14 +181,42 @@ def generate_launch_description():
         remappings=[('frontiers', 'frontiers')],
     )
 
-    path_follower = Node(
-        package='r7021e_exploration', executable='path_follower_node',
-        name='path_follower', output='screen',
-        parameters=[{
+    # Same two files as the planner, then the overrides, same precedence. The
+    # course's follower declares only five of the keys in lab3.yaml's
+    # /path_follower block and ignores the rest.
+    follower_parameters = [
+        PathJoinSubstitution([config_dir, 'robot.yaml']),
+        PathJoinSubstitution([config_dir, 'lab3.yaml']),
+        {
             'use_sim_time': use_sim_time,
             'max_w': ParameterValue(LaunchConfiguration('follower_max_w'),
                                     value_type=float),
-        }],
+            'stop_distance': ParameterValue(
+                LaunchConfiguration('follower_stop_distance'),
+                value_type=float),
+            'slow_distance': ParameterValue(
+                LaunchConfiguration('follower_slow_distance'),
+                value_type=float),
+        },
+    ]
+    follower = LaunchConfiguration('follower')
+
+    # Two declarations rather than one with a substituted package name: Node
+    # resolves its executable when the launch description is built, before the
+    # argument has a value. Conditions are evaluated later, so exactly one of
+    # these ever starts.
+    path_follower = Node(
+        package='r7021e_rrt', executable='path_follower_node',
+        name='path_follower', output='screen',
+        parameters=follower_parameters,
+        condition=IfCondition(PythonExpression(["'", follower, "' == 'rrt'"])),
+    )
+
+    course_follower = Node(
+        package='r7021e_exploration', executable='path_follower_node',
+        name='path_follower', output='screen',
+        parameters=follower_parameters,
+        condition=IfCondition(PythonExpression(["'", follower, "' == 'course'"])),
     )
 
     # slam_toolbox's own launch file rather than a hand-rolled LifecycleNode plus
@@ -201,4 +254,5 @@ def generate_launch_description():
     )
 
     return LaunchDescription(
-        arguments + [domain, world, slam, frontier_detector, path_follower, ours, rviz])
+        arguments + [domain, world, slam, frontier_detector, path_follower,
+                     course_follower, ours, rviz])

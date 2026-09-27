@@ -21,14 +21,22 @@ Five tasks from `Lab_Instructions_Exploration.pdf`:
    centre of the lab.
 5. **The complete system.** Choose a target, plan to it, drive, repeat until done.
 
+When it is done it says so. After `max_empty_cycles` consecutive cycles with no reachable
+frontier the node parks the robot and republishes a green `EXPLORATION COMPLETE` marker on
+`/exploration_status`, carrying the cycle count and elapsed time, every cycle from then on.
+It republishes rather than latching so that RViz opened late, or a bag examined afterwards,
+still shows it.
+
 Tasks 1 and 5 are the same node here. Task 1 is the loop with the goal written down and
 Task 5 is the loop with the goal chosen by Task 4, so building Task 1 as a throwaway
 script would have meant building it twice.
 
-Task 3 is answered by map inflation: every occupied cell is stamped with a disc of the
-robot's radius before the planner sees the map. The planner keeps treating the robot as a
-point, exactly as the instructions allow, and the margin is enforced by geometry rather
-than by a behaviour that can be tuned away at run time.
+Task 3 is answered twice, because either half alone measurably fails. Map inflation
+stamps every occupied cell with a disc of the robot's radius before the planner sees the
+map, so the planner keeps treating the robot as a point, exactly as the instructions
+allow. And the path follower refuses to drive into anything the laser sees in the strip
+the robot's body is about to sweep, at 10 Hz, because the map is least trustworthy
+exactly where the robot is about to drive.
 
 ## One-time setup on a new machine
 
@@ -43,8 +51,8 @@ cd ~/advanced-robotics-2026/lab3-files/ros2_ws
 # extract r7021e_exploration here
 ```
 
-Without it, `lab3.launch.py` will fail to find `frontier_detector_node` and
-`path_follower_node`.
+Without it, `lab3.launch.py` will fail to find `frontier_detector_node`, and
+`follower:=course` will fail to find `path_follower_node`.
 
 ### System packages
 
@@ -114,7 +122,7 @@ ros2 launch r7021e_rrt_bringup lab3.launch.py use_sim_time:=false domain_id:=34 
 | Argument | Default | What it does |
 |---|---|---|
 | `sim` | `false` | bring up Gazebo and spawn the Burger |
-| `world` | `lab3_maze_small` | which maze. `lab3_maze_small` is 4.0 m, `lab3_maze` is 7.2 m |
+| `world` | `lab3_maze_small` | which maze. `lab3_maze_small` is 4.0 m, `lab3_maze` is 7.3 m with 45.29 m2 of corridor |
 | `gui` | `true` | Gazebo's own GUI. `false` for a headless sweep |
 | `rviz` | `false` | RViz2 with the saved Lab 3 configuration |
 | `slam` | `true` | start slam_toolbox |
@@ -123,13 +131,78 @@ ros2 launch r7021e_rrt_bringup lab3.launch.py use_sim_time:=false domain_id:=34 
 | `gain_mode` | `reduced_range` | which information gain. `cluster_size` is the alternative |
 | `inflation` | `0.105` | obstacle inflation radius in metres |
 | `follower_max_w` | `1.0` | the follower's turn rate limit in rad/s. Lowering it has been measured and made the map worse, see section 15 of lab3-report-notes.md |
+| `follower` | `rrt` | which path follower drives the wheels. `rrt` is ours, `course` is the supplied one |
+| `follower_stop_distance` | `0.18` | reactive hard stop distance in metres |
+| `follower_slow_distance` | `0.30` | reactive taper distance in metres. Both at `0.0` turns the reactive layer off |
 
 `gain_mode` and `inflation` are arguments because the report compares runs that differ in
 exactly one of them. Everything else lives in `config/lab3.yaml`.
 
+### Which follower, and why there are two
+
+The lab instructions say "you are allowed to modify the nodes as you feel is needed", and
+the default here takes them up on it. The supplied `path_follower_node` zeroes linear
+velocity whenever the heading error to its target exceeds 0.3 rad, and with waypoints
+0.10 m apart on a path that bends that means stopping, turning, creeping forward and
+stopping again. Measured off recorded runs it spends 45 to 62 percent of a run turning on
+the spot, and the competition is scored on time.
+
+Ours keeps pure pursuit and the same limits and changes three things: it stops when it
+reaches the last waypoint instead of spinning at it, it scales speed by `cos(heading
+error)` so the robot drives arcs instead of switching between turning and driving, and it
+carries a reactive speed limit off the laser. That last one is the important one on
+hardware. It runs at 10 Hz and looks at the strip the body is about to sweep, 0.10 m either
+side of the centre line, rather than a cone of bearings: a cone is blind to a wall corner
+passing at 45 to 90 degrees, which is exactly where a corner is as the robot pulls away
+from it. Forward speed tapers from 0.30 m to zero at 0.18 m; turning is never limited, so a
+robot stopped at a wall can still turn away from it.
+
+`follower:=course` runs the supplied node instead, unchanged, so the two can be compared
+in a single run of the stack. The course package still has to be installed either way,
+because the frontier detector comes from it.
+
+Turning the reactive layer off means setting **both** distances to zero. Setting only
+`follower_stop_distance:=0.0` leaves the taper running, scaled from `follower_slow_distance`
+down to zero, which is a different experiment from the one it looks like.
+
 **The launch file sets `ROS_DOMAIN_ID` for the nodes it starts.** A `ros2 topic echo` in
 another terminal sees nothing until that terminal exports the same value. This is worth
 knowing before you spend half an hour concluding the simulator is broken.
+
+## What a good run looks like
+
+Measured in simulation on the full maze, `lab3_maze`, 7.3 m across with 45.29 m2 of
+corridor, over three consecutive runs of the final configuration. Coverage and clearance
+are computed from the simulator's own pose against the world file, not from the SLAM map.
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| true coverage of the maze | 100.0% | 100.0% | 100.0% |
+| declared `EXPLORATION COMPLETE` at | 686 s | 769 s | 665 s |
+| closest approach, robot centre to a real wall | 0.100 m | 0.120 m | 0.100 m |
+| largest SLAM pose error against ground truth | 0.32 m | 0.24 m | 0.28 m |
+
+The robot's circumscribing radius is 0.113 m. The two 0.100 m figures are sub-second
+passes with a wall corner beside the robot as it turned past, not ahead of it. The Burger
+is 0.138 m wide, so its side had about 3 cm, but a corner of the body sweeps wider while
+turning; treat them as possible grazes. No run tipped, and none showed the odometry jump
+that confirmed contact produces.
+
+What it looks like from outside: the robot works outward from wherever it starts, taking
+the nearest frontier that is worth the drive, and leaves small pockets behind. Once the
+cheap frontiers run out, the last one or two are typically 2 to 3 m away in a straight
+line but 15 to 27 m along the corridors, and the robot crosses the maze for them. That is
+when the planner's retry budget matters (see `rrt.retry_plan_time_scale`). After the last
+frontier is cleared, ten empty cycles later, it parks and says so.
+
+None of this has run on a physical Burger yet. Two things to watch in the hall:
+
+- **Drift without loop closure.** Simulated odometry is cleaner than the real robot's.
+  When the robot drives back down a corridor it mapped earlier, watch the map in RViz: a
+  wall that comes out doubled means drift has grown past what scan matching absorbs.
+- **Planning time on the lab laptop.** The retry budget is wall-clock time. A slower
+  machine gets fewer iterations in the same 3 s, so a far frontier can take a few extra
+  cycles to reach. Each failed cycle retries, so it costs time rather than coverage.
 
 ## Topics
 
@@ -174,7 +247,12 @@ ros2 param get /navigation_node gain.radius
 | `commit.switch_margin` | 0.5 | A rival must beat the committed goal by this much in H to take it. Stops frontier oscillation |
 | `goal.exhaust_radius` | 0.30 m | A goal already reached, or stalled on, is never offered again |
 | `path_waypoint_spacing` | 0.10 m | Half the follower's look-ahead, so it cannot cut corners off the checked path |
-| `max_empty_cycles` | 10 | Consecutive cycles with no cluster before the run ends |
+| `rrt.retry_plan_time_scale` | 20 | When nothing is reachable at the normal budget, every candidate is replanned once with 20 times the iterations and time. The last frontiers in the full maze are 2 to 3 m away in a straight line but 15 to 27 m along the corridors |
+| `half_width` (follower) | 0.10 m | Half width of the strip the reactive check watches. Wider stops the robot beside walls it is sliding past; narrower misses corners |
+| `safety_stop_distance` | 0.0 | The planner-side stop, disabled. It sat on the same 0.18 m line the follower brakes to and retired every new goal before the robot could turn away |
+| `do_loop_closing` (slam) | false | The maze's identical corridors produce false loop closures that move the whole map by more than a metre. Scan matching alone drifts less than 0.5 m over a run |
+| `max_empty_cycles` | 10 | Consecutive cycles with no reachable candidate before the run ends |
+| `max_exhaust_resets` | 3 | How many times the retired-goal list may be cleared when clusters remain but every goal was filtered out as already visited |
 
 ### Two parameters that exist because of a specific failure
 
@@ -260,9 +338,15 @@ as though it were motion: it can show the robot leaving a sealed maze.
 5. Launch with `use_sim_time:=false`. On the robot the clock is real.
 6. `ros2 param get /navigation_node inflation_radius` before the graded run. An empty
    parameter directory builds clean and launches clean.
-7. Consider `publish_markers:=false` on the robot. A 1500-node tree is 1499 line segments
+7. `ros2 param get /slam_toolbox do_loop_closing` should print `False`, and
+   `ros2 param get /path_follower half_width` should print `0.1`. These are the two
+   settings a stale build would get wrong.
+8. Consider `publish_markers:=false` on the robot. A 1500-node tree is 1499 line segments
    republished every cycle over a shared lab router.
-8. After every run, check for stray processes. `gz sim`'s server and GUI do not die on
+9. Expect a long pause late in the run. When nothing is reachable at the normal
+   planning budget the node replans every candidate with twenty times the iterations,
+   up to 3 s per candidate, with the robot standing still. It is working, not hung.
+10. After every run, check for stray processes. `gz sim`'s server and GUI do not die on
    Ctrl-C:
 
 ```bash
@@ -274,6 +358,23 @@ appears in that shell's own command line, which kills the terminal doing the cle
 
 ## If something goes wrong
 
+**The robot drives into a dead end and sits there.** The follower refuses forward
+motion when anything in the strip ahead of its body is within 0.18 m, and still lets it
+turn. If it sits without turning, the strip is catching a wall beside it: check
+`half_width` on `/path_follower` is 0.10 m. At 0.12 m a wall the robot is sliding past
+reads as ahead, and the stall timer then retires every goal in reach.
+
+**The map jumps, or stops changing while the robot drives.** That was loop closure: in
+a maze of identical corridors slam_toolbox can match one junction against another and
+move the whole map by more than a metre, then spend a minute re-solving the pose graph
+with the map frozen. `do_loop_closing` is false in `slam_lab3.yaml` for this reason.
+Check it with `ros2 param get /slam_toolbox do_loop_closing`.
+
+**The robot turns back and forth between two distant frontiers.** A goal whose position
+depended on where the robot stood used to appear on one cycle and vanish on the next.
+Goals are now taken from the frontier's own cells. If it happens anyway, look at
+`/frontier_goals` for a candidate that comes and goes.
+
 **The robot does not move at all.** Check `/path` is being published
 (`ros2 topic hz /path`) and that the follower is subscribed. Then check tf: the follower
 looks up `map` to `base_link` with no timeout and no error handling, so if tf is not ready
@@ -281,11 +382,24 @@ when a path arrives it raises inside its timer callback and the node dies. Nothi
 these packages publishes a path until a tf lookup has succeeded once, which avoids it in
 practice.
 
-**The robot stops early and says exploration is complete.** Expect this: every run
-measured so far parked with frontiers still on the map. Look at `/frontier_goals` in RViz
-before assuming a bug. If the last candidates are red, the node found them, scored them and
-could not plan to any of them, which is the common case and is covered in section 12 of
-lab3-report-notes.md. If instead frontier cells are visible on `/frontiers` but the node reports
+**The robot stops early and says exploration is complete.** Read the last log line, which
+names which of two different faults it was:
+
+```
+nothing to explore (10/10), 8 clusters found, 6 unreachable
+nothing to explore (10/10), 3 clusters found, 0 unreachable
+```
+
+The first says the candidates were planned to and every plan failed, including the
+retry at twenty times the budget. That is the map sealing the robot in, usually the
+inflation collar on walls SLAM has drawn too thick, and it is covered in section 12 of
+lab3-report-notes.md. The second says none of them was ever
+scored: they were all filtered out before planning as goals the robot had already visited.
+`max_exhaust_resets` exists for that case and clears the retired list up to three times per
+run. If you see it with the resets already spent, raise it.
+
+Look at `/frontier_goals` in RViz before assuming a bug. If the last candidates are red,
+the node found them, scored them and could not plan to any of them. If instead frontier cells are visible on `/frontiers` but the node reports
 zero clusters, they are below `cluster.min_size` or fragmented. Clustering here is
 8-connected precisely because the boundary of what a rotating LiDAR has seen is a curve,
 and a curve on a grid is a staircase: under 4-connectivity a diagonal frontier is N

@@ -35,8 +35,8 @@ from r7021e_rrt.exploration_gain import (
     score_path,
     select_best_frontier,
 )
-from r7021e_rrt.grid import OccupancyMap, PlanningGrid
-from r7021e_rrt.rrt_star import RRTStarPlanner
+from r7021e_rrt.grid import GridInfo, OccupancyMap, PlanningGrid
+from r7021e_rrt.rrt_star import PlanResult, RRTStarPlanner
 
 RES = 0.05
 WIDTH, HEIGHT = 80, 80  # 4.0 by 4.0 m
@@ -177,8 +177,8 @@ def test_centroid_is_used_when_it_is_free() -> None:
 
 
 def test_concave_cluster_falls_back_toward_the_robot() -> None:
-    """The centroid fallback. A frontier wrapped around a corner has its centroid
-    inside the corner."""
+    """The fallback the skeleton insisted on. A frontier wrapped around a corner
+    has its centroid inside the corner."""
     cells = open_map()
     cells[28:33, 28:33] = 100  # a block where the centroid would land
     cluster = FrontierCluster([(30, 25), (30, 35), (25, 30), (35, 30)])
@@ -188,9 +188,39 @@ def test_concave_cluster_falls_back_toward_the_robot() -> None:
     goal = cluster_goal_point(cluster, grid, (0.3, 0.3))
     assert goal is not None
     assert not grid.is_blocked(goal)
-    # The walk goes toward the robot, so the goal is closer to it than the
-    # centroid was.
-    assert math.dist(goal, (0.3, 0.3)) < math.dist(centroid, (0.3, 0.3))
+    # One of the cluster's own cells, which is where the frontier is seen from.
+    assert grid.info.world_to_cell(goal) in cluster.cells
+
+
+def test_a_blocked_centroid_gives_the_same_goal_wherever_the_robot_stands() -> None:
+    """A goal that moves with the robot can be placed on one cycle and dropped on
+    the next, and the robot then turns back and forth between two frontiers."""
+    cells = open_map()
+    cells[28:33, 28:33] = 100
+    cluster = FrontierCluster([(30, 22), (30, 38), (22, 30), (38, 30)])
+    grid = planning(cells)
+    goals = {cluster_goal_point(cluster, grid, robot)
+             for robot in ((0.3, 0.3), (3.7, 3.7), (0.3, 3.7), (3.7, 0.3))}
+    assert len(goals) == 1
+    (goal,) = goals
+    assert goal is not None
+    assert grid.info.world_to_cell(goal) in cluster.cells
+
+
+def test_a_cluster_straddling_unknown_prefers_the_robots_side() -> None:
+    """A roomier cell beyond a strip of unknown is one the planner may not reach."""
+    cells = open_map()
+    cells[:, 38:43] = -1          # an unknown strip splitting the room
+    cells[:, 33] = 100            # a wall close behind the near side
+    grid = planning(cells)
+    assert grid.clearance(grid.info.cell_to_world((43, 31))) > \
+        grid.clearance(grid.info.cell_to_world((37, 31)))
+    near = [(37, r) for r in range(30, 34)]
+    far = [(43, r) for r in range(30, 34)]
+    cluster = FrontierCluster(near + far)
+    goal = cluster_goal_point(cluster, grid, (1.8, 1.5))
+    assert goal is not None
+    assert grid.info.world_to_cell(goal) in near
 
 
 def test_goal_uses_the_inflated_grid_not_the_raw_map() -> None:
@@ -490,3 +520,113 @@ def test_a_distant_goal_survives_an_unrelated_retirement() -> None:
         exhausted_goals=[(-99.0, -99.0)], exhaust_radius_m=0.30)
     assert decision.chosen is not None
     assert math.dist(decision.chosen.goal, baseline.chosen.goal) < 1e-9
+
+
+# --------------------------------------------------- the turn term in H(p)
+
+def test_turn_cost_is_off_by_default():
+    config = GainConfig()
+    assert config.turn_cost_m_per_rad == 0.0
+    path = [(0.0, 0.0), (-1.0, 0.0)]
+    assert score_path(path, 0.0, config, robot_yaw=0.0) == score_path(
+        path, 0.0, config)
+
+
+def test_turn_cost_charges_the_swing_onto_the_path():
+    config = GainConfig(weight_m_per_cell=0.0, turn_cost_m_per_rad=0.15)
+    ahead = [(0.0, 0.0), (1.0, 0.0)]
+    behind = [(0.0, 0.0), (-1.0, 0.0)]
+    # Same length, opposite directions, robot facing east.
+    assert score_path(ahead, 0.0, config, robot_yaw=0.0) == 1.0
+    assert math.isclose(score_path(behind, 0.0, config, robot_yaw=0.0),
+                        1.0 + 0.15 * math.pi)
+
+
+def test_turn_cost_takes_the_short_way_round():
+    config = GainConfig(weight_m_per_cell=0.0, turn_cost_m_per_rad=1.0)
+    path = [(0.0, 0.0), (1.0, 0.0)]
+    # Robot facing just past due west either way: the charge must be the same.
+    left = score_path(path, 0.0, config, robot_yaw=math.pi - 0.1)
+    right = score_path(path, 0.0, config, robot_yaw=-math.pi + 0.1)
+    assert math.isclose(left, right)
+    assert math.isclose(left, 1.0 + (math.pi - 0.1))
+
+
+def test_turn_cost_needs_a_yaw_and_two_waypoints():
+    config = GainConfig(weight_m_per_cell=0.0, turn_cost_m_per_rad=1.0)
+    assert score_path([(0.0, 0.0)], 0.0, config, robot_yaw=3.0) == 0.0
+    assert score_path([(0.0, 0.0), (-1.0, 0.0)], 0.0, config) == 1.0
+
+
+def test_turn_cost_cannot_outweigh_a_much_shorter_path():
+    # A sanity bound on the units: the charge for the worst possible turn is
+    # 0.47 m, so it can reorder candidates that are close in length and cannot
+    # make a 5 m path beat a 1 m one.
+    config = GainConfig(weight_m_per_cell=0.0, turn_cost_m_per_rad=0.15)
+    near_behind = score_path([(0.0, 0.0), (-1.0, 0.0)], 0.0, config, 0.0)
+    far_ahead = score_path([(0.0, 0.0), (5.0, 0.0)], 0.0, config, 0.0)
+    assert near_behind < far_ahead
+
+
+# ------------------------------------- the goal must be a viewpoint of its frontier
+
+def test_walkback_is_capped_so_a_goal_cannot_detach_from_its_cluster():
+    """A blocked centroid far from the robot yields no goal, not a goal at the robot.
+
+    Uncapped, the fallback walked the whole way to the robot and returned a point
+    at its feet, which sees no frontier, scores H as pure distance, and wins.
+    """
+    from r7021e_rrt.exploration_gain import GOAL_WALKBACK_MAX_M
+
+    # A wall band the cluster sits inside, with the robot 3 m away in free space.
+    info = GridInfo(resolution=0.05, origin_x=0.0, origin_y=0.0, width=100, height=40)
+    data = np.zeros((40, 100), dtype=np.int16)
+    data[:, 0:20] = 100           # everything under the cluster is occupied
+    grid = PlanningGrid(OccupancyMap(data, info), inflation_radius_m=0.0)
+
+    cluster = FrontierCluster(cells=[(10, 20)])
+    robot = (4.0, 1.0)
+    goal = cluster_goal_point(cluster, grid, robot)
+
+    centroid = (info.origin_x + 10.5 * info.resolution,
+                info.origin_y + 20.5 * info.resolution)
+    if goal is not None:
+        assert math.dist(goal, centroid) <= GOAL_WALKBACK_MAX_M + info.resolution
+        assert math.dist(goal, robot) > GOAL_WALKBACK_MAX_M
+
+
+def test_a_reachable_centroid_is_still_returned_unchanged():
+    info = GridInfo(resolution=0.05, origin_x=0.0, origin_y=0.0, width=40, height=40)
+    data = np.zeros((40, 40), dtype=np.int16)
+    grid = PlanningGrid(OccupancyMap(data, info), inflation_radius_m=0.0)
+    cluster = FrontierCluster(cells=[(20, 20)])
+    goal = cluster_goal_point(cluster, grid, (0.1, 0.1))
+    assert goal == (info.origin_x + 20.5 * info.resolution,
+                    info.origin_y + 20.5 * info.resolution)
+
+
+class _IterationBoundPlanner:
+    """Solves only when given more iterations than the ordinary cap."""
+
+    def __init__(self) -> None:
+        self.max_iterations = 1500
+        self.max_plan_time_s = 0.15
+        self.budgets: list[tuple[int, float]] = []
+
+    def plan(self, start, goal) -> PlanResult:
+        self.budgets.append((self.max_iterations, self.max_plan_time_s))
+        if self.max_iterations <= 1500:
+            return PlanResult(None)
+        return PlanResult([start, goal], math.dist(start, goal))
+
+
+def test_the_retry_raises_the_iteration_cap_not_only_the_clock() -> None:
+    """Long corridor routes need more iterations, not only more time."""
+    frontier, grid, _ = scenario()
+    planner = _IterationBoundPlanner()
+    decision = select_best_frontier(frontier, grid, (0.5, 1.5), planner,
+                                    retry_plan_time_scale=10.0)
+    assert decision.chosen is not None
+    assert (1500, 0.15) in planner.budgets
+    assert (15000, 1.5) in planner.budgets
+    assert (planner.max_iterations, planner.max_plan_time_s) == (1500, 0.15)

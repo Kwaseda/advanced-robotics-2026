@@ -1,4 +1,4 @@
-# Autonomous exploration, Lab 3. Parameters for navigation_node.
+# Autonomous exploration, Lab 3. Parameters for navigation_node and path_follower.
 #
 # Every number here has a reason next to it. Physical facts are not repeated: they come
 # from config/robot.yaml, which the launch file loads first. Where a number here is
@@ -83,6 +83,50 @@
     # short fuse burning during startup makes the run announce "exploration complete"
     # within seconds of launch. See navigation_node's _on_nothing_to_explore.
     max_empty_cycles: 10
+    # How many times the retired-goal list may be cleared before termination is
+    # allowed to proceed. Zero restores permanent retirement.
+    #
+    # Retiring a goal on arrival is what stops the arrive-reselect-arrive loop, and
+    # arrival means reaching the goal POINT, which cluster_goal_point walks back
+    # from the frontier for clearance. So the robot can arrive, retire the goal, and
+    # never have observed the frontier itself. Measured across six runs in
+    # lab3_maze_wide, every short run ended on "nothing to explore (10/10),
+    # 3 clusters found, 0 unreachable": frontiers still on the map, none of them
+    # scored, because all had been filtered out before planning. Coverage on that one
+    # configuration ranged from 64.6 to 100 percent of the real maze.
+    #
+    # Bounded rather than unbounded, because a frontier that genuinely cannot be
+    # cleared would otherwise be retried forever and the run would never end.
+    max_exhaust_resets: 3
+
+    # Planner-side stop, disabled (0.0). It shared the follower's 0.18 m line, so a
+    # robot the follower had stopped at a wall retired every new goal before it
+    # could turn away. The follower's own check below is the reactive layer.
+    safety_stop_distance: 0.0    # m
+    safety_sector: 0.6           # rad, half angle either side of straight ahead.
+                                 # 1.6 rad was tried and is much worse: at that width
+                                 # the sector sees the corridor's own side walls,
+                                 # which the robot passes at 0.15 to 0.22 m, so the
+                                 # stop fired 259 times in one run and the robot
+                                 # explored half as much.
+
+    # Push each interior waypoint up the clearance gradient by at most this, so the
+    # path runs down the middle of a corridor rather than along the inflation collar.
+    # Inflation is a hard constraint and is indifferent between hugging the collar and
+    # driving the centre line, so RRT* takes the hugging path because it is shorter.
+    path_centring_shift: 0.12   # m
+
+    # Recovery: turn on the spot to re-observe when nothing is reachable.
+    max_look_around_cycles: 8
+    # These two are a rotation command written in the only language the follower
+    # speaks, a waypoint, so they have to clear the follower's own thresholds or the
+    # recovery turns into a stop. Both invariants are checked by a desk test:
+    #   radius > the follower's goal_tolerance (0.05 m), or the waypoint is one the
+    #     robot has already arrived at, and our follower stops on arrival.
+    #   step > turn_in_place (1.2 rad) plus what the robot can turn between
+    #     republications, 1.0 rad/s at the 1 Hz replan period.
+    look_around_radius: 0.25      # m,   > goal_tolerance 0.05
+    look_around_step: 2.6         # rad, > turn_in_place 1.2 + max_w 1.0 * 1 s
 
     # Recovery, for a failure that looks exactly like success. Frontier clusters keep
     # being found, every one is reported unreachable, and the robot stands still. The
@@ -166,6 +210,19 @@
       # that crossing an 8 m maze does not need thousands of nodes.
       step_size: 0.30
 
+      # When a cycle finds nothing reachable, replan every candidate once more with
+      # the time budget multiplied by this. 1.0 disables it.
+      #
+      # RRT* is probabilistically complete, so failing at max_plan_time is a
+      # statement about the budget, not about the maze, and a cycle with no
+      # reachable candidate is what starts the look-around, then the unstick, then
+      # the termination countdown. Six candidates at 0.15 s use at most 0.9 s of a
+      # 1.0 s replan period, so the budget is there to be spent.
+      # Scales the iteration cap as well as the clock. The last frontiers in the
+      # full maze are 15 to 27 m away along the corridors and need about 20x. Up to
+      # 3 s per candidate; the follower keeps its own 10 Hz reactive check meanwhile.
+      retry_plan_time_scale: 20.0
+
       # How often to sample the goal itself instead of a random point. Without this the
       # tree wanders and only reaches the goal by luck. Above about 0.2 it stops being
       # RRT and becomes a greedy straight-line probe that gets stuck on the first wall.
@@ -210,6 +267,14 @@
     # -------------------------------------------------------- exploration gain
 
     gain:
+      # Metres of equivalent path charged per radian of the swing the robot must make
+      # before it can start down a candidate's path. Two candidates 2 m away, one
+      # ahead and one behind, cost the same in d and are not the same cost. At max_v
+      # 0.15 m/s and max_w 1.0 rad/s the robot covers 0.15 m in the time it takes to
+      # turn a radian, so this is a conversion with a derivation behind it rather
+      # than a preference; a half turn costs 0.47 m. 0.0 restores H = sum(d) - w * I.
+      turn_cost_per_rad: 0.15
+
       # I(p), the information gain term, and the graded centre of this lab.
       #
       #   reduced_range  the number of frontier cells within `radius` of the candidate
@@ -329,3 +394,56 @@
     # 1500-node tree is 1499 line segments republished every cycle, over a shared lab
     # router, alongside the map and the laser scan.
     publish_markers: true
+
+# ---------------------------------------------------------------------------------
+# The path follower. Ours, not the course's; `follower:=course` runs theirs instead
+# and ignores this section, since the course node does not declare the last five.
+#
+# The lab instructions permit this: "you are allowed to modify the nodes as you feel
+# is needed". The supplied law spends 45 to 62 percent of a run turning on the spot.
+/path_follower:
+  ros__parameters:
+
+    # The five the course's own node also declares, at the course's own values, so
+    # that switching followers changes the law and not the tuning.
+    max_v: 0.15                 # m/s
+    max_w: 1.0                  # rad/s
+    kp_vel: 1.0
+    kp_yaw: 2.0
+    look_ahead: 0.2             # m
+
+    # Arrival. The supplied node never empties its waypoint list and so never stops;
+    # this one stops here. Tighter than navigation_node's own arrival_tolerance of
+    # 0.20 m on purpose: the planner must declare arrival first, or the follower
+    # holds position while the planner waits for progress that cannot come. It also
+    # has to stay below look_around_radius, or the recovery turn becomes a stop.
+    goal_tolerance: 0.05        # m
+
+    # Above this heading error the robot turns without translating; below it, speed
+    # scales by cos(error) and it drives an arc. The course's own threshold is
+    # 0.3 rad, which with waypoints 0.10 m apart on a bending path means stopping and
+    # turning every two seconds. 1.2 rad is where cos has fallen to 0.36 anyway.
+    turn_in_place: 1.2          # rad
+
+    # The reactive layer, Task 3's "Reactive (APF)" half. It runs at the follower's
+    # 10 Hz against a 5 Hz scan, which is the point of it: the same check in
+    # navigation_node runs at replan_period, 1.0 s, and a robot at 0.15 m/s covers
+    # 0.15 m between two of those against an 0.18 m threshold, so it gets one sample
+    # inside the band it is meant to catch and often gets it late. Measured on a
+    # recorded run: forward clearance 0.45, 0.40, 0.25, 0.10 m on consecutive seconds
+    # at a commanded 0.150 m/s throughout.
+    #
+    # Braking from 0.15 m/s at the drive plugin's 1.0 m/s2 takes 0.011 m, and the
+    # robot travels 0.015 m before the next cycle looks. 0.026 m against the 0.06 m
+    # between stop_distance and the LDS-01's 0.12 m range_min floor, below which
+    # there are no returns to read.
+    stop_distance: 0.18         # m,   forward motion refused at or below this
+    slow_distance: 0.30         # m,   speed tapers linearly from here down to it
+    # Both distances are measured along the heading, to returns within this far
+    # either side of the centre line: 0.069 m of Burger plus 0.031 m.
+    half_width: 0.10            # m
+
+    # A scan older than this counts as blocked, not as clear, and the node says so
+    # once a second. Failing closed on a dead LiDAR is the only safe way round, and a
+    # robot that silently will not move is worse than one that refuses loudly.
+    scan_timeout: 0.5           # s

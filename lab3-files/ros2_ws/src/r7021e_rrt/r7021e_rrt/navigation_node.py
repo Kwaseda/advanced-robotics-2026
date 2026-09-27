@@ -2,14 +2,15 @@
 """The Lab 3 navigation loop: the only file in this package that imports rclpy.
 
 Tasks 1 and 5 of the lab instructions both live here. Task 1 is "send a Path to
-the follower and send a new one when the robot reaches the end"; Task 5 is that
+the follower and send a new one when the robot reaches the end"; task 5 is that
 same loop with the goal chosen by the exploration gain instead of written down.
-They are the same node, so building Task 1 as a throwaway script would have meant
-building it twice.
+They are the same node, and building task 1 as a throwaway script would have
+meant building this twice.
 
 Everything algorithmic is somewhere else. This file owns subscriptions, timers,
 message types, headers, tf and parameters, and nothing that could be tested at a
-desk, which is why the planner and the gain have unit tests at all.
+desk. That is the split Labs 1 and 2 used and the reason the planner and the gain
+have unit tests at all.
 
 The loop
 --------
@@ -29,8 +30,9 @@ human intervenes, and a hardware session is three hours long.
 Detecting arrival ourselves, and stopping at all
 -------------------------------------------------
 `path_follower_node.py` publishes on exactly one topic, `cmd_vel`. There is no
-status, done or goal-reached topic anywhere in it, so completion is detected here
-by comparing the tf pose against the last waypoint.
+status, done or goal-reached topic anywhere in it, so completion is ours to
+detect by comparing the tf pose against the last waypoint. Read from source
+2026-09-23; evidence tier `untested`.
 
 Stopping is the same problem one step further on. The follower pops waypoints
 only `while len(self.path) > 1`, so its list never empties and it keeps
@@ -39,8 +41,8 @@ zero, so there is no message that stops it. What does work is a path holding a
 single waypoint at the robot's own position: the distance term goes to zero and
 the robot stops translating. It then rotates to face world east, because
 `atan2(0.0, 0.0)` is 0.0, and parks there. That is the park manoeuvre this node
-performs on termination. The rotation is cosmetic; what matters is that the
-robot stops driving.
+performs on termination, and it is a real-time problem the report names rather
+than a bug this node hides.
 
 The alternative was publishing zero `TwistStamped` ourselves, which would put a
 second publisher on `cmd_vel` against a follower that never stops publishing.
@@ -50,10 +52,11 @@ does something that looks like a tuning problem and is not.
 The frontier topic defect
 -------------------------
 `frontier_detector_node.py` publishes on `frontiers`. The course template's
-navigation node declares `frontier_topic` defaulting to `frontier`, singular, and
-`exploration.launch.py` carries no remapping, so as shipped that subscription
-never receives anything. This node defaults to the plural, the name the publisher
-actually uses.
+navigation node declares `frontier_topic` defaulting to `frontier`, singular,
+and `exploration.launch.py` carries no remapping, so as shipped that
+subscription never receives anything. This node defaults to the plural, which is
+the name the publisher actually uses. Confirmed by reading the package
+2026-09-23; evidence tier `untested`.
 """
 
 from __future__ import annotations
@@ -65,9 +68,12 @@ import rclpy
 from builtin_interfaces.msg import Duration as DurationMsg
 from geometry_msgs.msg import PoseStamped, Point as PointMsg, Quaternion, Vector3
 from nav_msgs.msg import OccupancyGrid, Path
+from sensor_msgs.msg import LaserScan
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
+                       ReliabilityPolicy, qos_profile_sensor_data)
 from rclpy.time import Time
 from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker, MarkerArray
@@ -79,7 +85,8 @@ from .exploration_gain import (
     select_best_frontier,
 )
 from .grid import OccupancyMap, PlanningGrid
-from .rrt_star import RRTStarPlanner, densify_path
+from .rrt_star import (RRTStarPlanner, centre_path, densify_path,
+                       look_around_target)
 
 Point = tuple[float, float]
 
@@ -91,14 +98,18 @@ Point = tuple[float, float]
 # `QoSProfile(depth=1)`, which is VOLATILE, so /frontiers is volatile whatever we
 # would prefer.
 #
-# DDS does not fall back: an incompatible subscription receives nothing at all.
-# Both sides log it, and the wording is worth recognising:
+# Using the map's profile for both is what this node did first, and DDS does not
+# fall back: an incompatible subscription silently receives nothing. It is not
+# quite silent in this case, which is the only reason it took one run rather than
+# an evening. Both sides log it, and the wording is worth recognising:
 #
 #   [frontier_detector] New subscription discovered on topic 'frontiers',
 #       requesting incompatible QoS. No messages will be sent to it.
 #       Last incompatible policy: DURABILITY
 #   [navigation_node] New publisher discovered on topic 'frontiers', offering
 #       incompatible QoS. No messages will be received from it.
+#
+# Evidence tier: sim, lab3_maze_small, 2026-09-23.
 MAP_QOS = QoSProfile(
     depth=1,
     reliability=ReliabilityPolicy.RELIABLE,
@@ -151,6 +162,14 @@ class NavigationNode(Node):
         self.declare_parameter('stall_timeout', 8.0)
         self.declare_parameter('max_path_age', 20.0)
         self.declare_parameter('max_empty_cycles', 10)
+        self.declare_parameter('max_exhaust_resets', 3)
+        self.declare_parameter('path_centring_shift', 0.12)
+        self.declare_parameter('safety_stop_distance', 0.18)
+        self.declare_parameter('safety_sector', 0.6)
+        self.declare_parameter('safety_retreat', 0.25)
+        self.declare_parameter('max_look_around_cycles', 8)
+        self.declare_parameter('look_around_radius', 0.05)
+        self.declare_parameter('look_around_step', 2.0)
         self.declare_parameter('max_unstick_attempts', 4)
         self.declare_parameter('unstick_radius', 0.60)
         self.declare_parameter('unstick_min_distance', 0.15)
@@ -167,10 +186,12 @@ class NavigationNode(Node):
         self.declare_parameter('rrt.unknown_lookahead', 0.50)
         self.declare_parameter('rrt.extra_iterations_after_solution', 200)
         self.declare_parameter('rrt.max_plan_time', 0.15)
+        self.declare_parameter('rrt.retry_plan_time_scale', 1.0)
 
         self.declare_parameter('gain.mode', 'reduced_range')
         self.declare_parameter('gain.radius', 0.75)
         self.declare_parameter('gain.weight_per_cell', 0.10)
+        self.declare_parameter('gain.turn_cost_per_rad', 0.0)
 
         self.declare_parameter('cluster.min_size', 5)
         self.declare_parameter('cluster.max_size', 100)
@@ -193,6 +214,21 @@ class NavigationNode(Node):
         self.stall_timeout = float(self.get_parameter('stall_timeout').value)
         self.max_path_age = float(self.get_parameter('max_path_age').value)
         self.max_empty_cycles = int(self.get_parameter('max_empty_cycles').value)
+        self.max_exhaust_resets = int(
+            self.get_parameter('max_exhaust_resets').value)
+        self.path_centring_shift = float(
+            self.get_parameter('path_centring_shift').value)
+        self.safety_stop_distance = float(
+            self.get_parameter('safety_stop_distance').value)
+        self.safety_sector = float(self.get_parameter('safety_sector').value)
+        self.safety_retreat = float(
+            self.get_parameter('safety_retreat').value)
+        self.max_look_around_cycles = int(
+            self.get_parameter('max_look_around_cycles').value)
+        self.look_around_radius = float(
+            self.get_parameter('look_around_radius').value)
+        self.look_around_step = float(
+            self.get_parameter('look_around_step').value)
         self.max_unstick_attempts = int(
             self.get_parameter('max_unstick_attempts').value)
         self.unstick_radius = float(self.get_parameter('unstick_radius').value)
@@ -210,6 +246,8 @@ class NavigationNode(Node):
             mode=str(self.get_parameter('gain.mode').value),
             radius_m=float(self.get_parameter('gain.radius').value),
             weight_m_per_cell=float(self.get_parameter('gain.weight_per_cell').value),
+            turn_cost_m_per_rad=float(
+                self.get_parameter('gain.turn_cost_per_rad').value),
         )
 
         # ---- interfaces
@@ -225,6 +263,11 @@ class NavigationNode(Node):
         self.create_subscription(
             OccupancyGrid, str(self.get_parameter('frontier_topic').value),
             self._on_frontier, FRONTIER_QOS)
+        # The live scan, used for nothing but refusing to drive into something
+        # the map has not got round to believing in yet. Sensor data QoS,
+        # because a scan is worth nothing late.
+        self.create_subscription(
+            LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
 
         self.tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=10.0))
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -239,9 +282,19 @@ class NavigationNode(Node):
         # See _retire_goal for why this list has to exist at all.
         self._exhausted: list[Point] = []
         self._empty_cycles = 0
+        # How many times the exhausted list has been cleared. Bounded, because an
+        # unbounded version cannot terminate. See _try_forget_exhausted.
+        self._exhaust_resets = 0
         self._unstick_attempts = 0
+        self._look_around_cycles = 0
+        self._scan: LaserScan | None = None
+        self._grid = None
+        self._safety_stops = 0
+        self._look_around_cycles = 0
         self._cycle = 0
         self._finished = False
+        self._finished_at: Point | None = None
+        self._started_at = self.get_clock().now()
         # Whether this node has ever had something to explore. Termination is
         # gated on it; see _on_nothing_to_explore.
         self._started_exploring = False
@@ -257,6 +310,54 @@ class NavigationNode(Node):
             f'replanning every {self._period:.1f} s.')
 
     # ------------------------------------------------------------- callbacks
+
+    def _on_scan(self, msg: LaserScan) -> None:
+        self._scan = msg
+
+    def _closest_return(self, half_angle: float) -> tuple[float, float]:
+        """(range, bearing) of the nearest return within `half_angle` of ahead.
+
+        Bearing is in the robot's own frame, so zero is straight ahead. Returns
+        infinite range when there is no scan or nothing in the sector, so a
+        missing sensor never manufactures a stop.
+        """
+        scan = self._scan
+        if scan is None or not scan.ranges:
+            return float('inf'), 0.0
+        best, bearing = float('inf'), 0.0
+        for index, value in enumerate(scan.ranges):
+            if not math.isfinite(value) or value < scan.range_min:
+                continue
+            angle = scan.angle_min + index * scan.angle_increment
+            angle = math.atan2(math.sin(angle), math.cos(angle))
+            if abs(angle) <= half_angle and value < best:
+                best, bearing = value, angle
+        return best, bearing
+
+    def _forward_clearance(self, half_angle: float) -> float:
+        """Closest return within `half_angle` of straight ahead, in metres.
+
+        The scan is in the robot's own frame, so this needs no pose, no map and
+        no tf, and it is right even when all three are wrong. That is the whole
+        point of it: every other check in this node reads the map, and the map
+        is by construction out of date exactly where the robot is going, at the
+        frontier.
+
+        Returns infinity when there is no scan yet or nothing in the sector, so
+        a missing sensor never manufactures a stop.
+        """
+        scan = self._scan
+        if scan is None or not scan.ranges:
+            return float('inf')
+        best = float('inf')
+        for index, value in enumerate(scan.ranges):
+            if not math.isfinite(value) or value < scan.range_min:
+                continue
+            angle = scan.angle_min + index * scan.angle_increment
+            angle = math.atan2(math.sin(angle), math.cos(angle))
+            if abs(angle) <= half_angle and value < best:
+                best = value
+        return best
 
     def _on_map(self, msg: OccupancyGrid) -> None:
         """Store the map. Deliberately does no planning; see the module docstring."""
@@ -292,12 +393,50 @@ class NavigationNode(Node):
 
     def _tick(self) -> None:
         if self._finished:
+            # Keep saying so. The node used to return here, which meant that
+            # after the last cycle nothing was published at all and the final
+            # state of the run was a stale marker reading "idle 10/10", left
+            # over from the cycle before the one that decided. A run that has
+            # finished should be visibly finished, to RViz, to a bag opened
+            # afterwards, and to anything that subscribes late, so the terminal
+            # status is republished at the tick rate instead of latched once.
+            self._publish_finished()
             return
 
         pose = self.get_robot_pose()
         if pose is None or self._map is None or self._frontier is None:
             return
         position = (pose[0], pose[1])
+
+        # Before anything that consults the map: is the robot about to drive
+        # into something? Measured cause of every failed run in this world is a
+        # collision with a wall the map either had not seen or had put
+        # elsewhere, after which the wheels lose traction, dead reckoning loses
+        # thousands of degrees and the map becomes fiction. The map cannot
+        # prevent that because the map is what is wrong. The scan can.
+        near, _ = self._closest_return(self.safety_sector)
+        if self._path and near < self.safety_stop_distance:
+            self._safety_stops += 1
+            # Stop, retire the goal, and let the next cycle plan afresh. An
+            # earlier version backed away from the obstacle instead, which
+            # sounds strictly better and measured far worse: the retreat point
+            # sits behind the robot, the follower turns on the spot to face it
+            # because the heading error exceeds its own 0.3 rad threshold, and a
+            # 180 degree turn taken while already close to a wall is exactly the
+            # manoeuvre that scrapes. Tipped samples went from 32 to 10104.
+            # Stopping puts the robot nowhere new, which turns out to be the
+            # point.
+            self.get_logger().warn(
+                f'cycle {self._cycle}: obstacle {near:.2f} m ahead, under the '
+                f'{self.safety_stop_distance:.2f} m limit. Stopping and '
+                f'retiring this goal (stop {self._safety_stops}).')
+            if self._committed_goal is not None:
+                self._exhausted.append(self._committed_goal)
+            self._committed_goal = None
+            self._path = []
+            self._park(position)
+            self._reset_progress(position)
+            return
 
         self._track_progress(position)
         reason = self._replan_reason(position)
@@ -307,7 +446,7 @@ class NavigationNode(Node):
         self._retire_goal(reason)
 
         try:
-            decision = self._decide(position)
+            decision = self._decide(position, pose[2])
         except ValueError as exc:
             # Raised when the frontier grid and the map disagree about their own
             # geometry, which happens for one cycle after SLAM resizes the map.
@@ -321,7 +460,19 @@ class NavigationNode(Node):
             return
 
         self._empty_cycles = 0
+        # Both recovery budgets reset here, on the cycle that chose a goal. They
+        # bound consecutive fruitless recovery, not recovery for the lifetime of
+        # the run, and a goal being chosen is the evidence that the last round of
+        # it worked. Counting them per run instead is what ended one run at 141 s
+        # with 190 s of budget left and a third of the maze unexplored: the eight
+        # look-around cycles had been spent much earlier, on a situation the robot
+        # then drove out of, and the recovery was gone for good.
+        #
+        # `_exhaust_resets` deliberately does not reset here. Forgetting retired
+        # goals is what puts targets back on the table, so resetting its budget on
+        # reaching one of those targets is a loop with extra steps.
         self._unstick_attempts = 0
+        self._look_around_cycles = 0
         self._started_exploring = True
         self._committed_goal = decision.chosen.goal
         self._path = list(decision.chosen.path or [])
@@ -344,16 +495,18 @@ class NavigationNode(Node):
 
         The commitment exists to stop the robot thrashing between two similar
         frontiers *while it is driving to one of them*. It has no business
-        surviving arrival: leaving it in place produces a loop where the robot
-        arrives at a goal, finds the frontier still there, holds the commitment,
-        replans 0.3 m to the same goal and arrives again.
+        surviving arrival, and leaving it in place is half of a loop this node
+        spent a whole Gazebo run in: arrive at a goal, find the frontier still
+        there, hold the commitment, replan 0.3 m to the same goal, arrive again.
+        Thirty-one cycles of it, with the robot moving a few centimetres back
+        and forth. Evidence tier: sim, lab3_maze_small, 2026-09-23.
 
-        Releasing the commitment alone does not fix it, because the same goal then
-        wins on merit anyway: it is the nearest frontier, and nothing in
+        Releasing the commitment alone does not fix it, because the same goal
+        then wins on merit anyway: it is the nearest frontier and nothing in
         H = sum(d) - w I knows the robot has already been there. So a goal that
         has been arrived at, or that the robot stalled trying to reach, is
-        retired: no candidate within `goal.exhaust_radius` of it is offered again
-        for the rest of the run.
+        retired: no candidate within `goal.exhaust_radius` of it is offered
+        again for the rest of the run.
 
         Retiring on arrival is safe rather than aggressive. A frontier that the
         robot actually cleared disappears from the frontier grid on the next map
@@ -377,7 +530,7 @@ class NavigationNode(Node):
                 f'{len(self._exhausted)} retired')
             self._committed_goal = None
 
-    def _decide(self, position: Point) -> ExplorationDecision:
+    def _decide(self, position: Point, yaw: float) -> ExplorationDecision:
         """One planning cycle: build the grid once, then plan per candidate.
 
         The `PlanningGrid` and the `RRTStarPlanner` are constructed here, once,
@@ -391,6 +544,7 @@ class NavigationNode(Node):
         frontier = _as_occupancy_map(self._frontier)
         grid = PlanningGrid(occupancy, self.inflation_radius, self.occupied_threshold,
                             self.min_obstacle_neighbours)
+        self._grid = grid
 
         planner = RRTStarPlanner(
             grid,
@@ -418,6 +572,9 @@ class NavigationNode(Node):
                 self.get_parameter('commit.match_radius').value),
             exhausted_goals=self._exhausted,
             exhaust_radius_m=float(self.get_parameter('goal.exhaust_radius').value),
+            robot_yaw=yaw,
+            retry_plan_time_scale=float(
+                self.get_parameter('rrt.retry_plan_time_scale').value),
         )
 
     def _replan_reason(self, position: Point) -> str | None:
@@ -456,20 +613,26 @@ class NavigationNode(Node):
     ) -> None:
         """No candidate survived. Count it, and stop once it keeps happening.
 
-        Two guards, and both are needed.
+        Two guards, and the first run in Gazebo needed both.
 
-        The node starts before SLAM has published anything, so its first ticks
-        legitimately see no map and no frontiers. Termination is therefore gated
-        on `_started_exploring`: until this node has chosen a goal at least once,
-        an empty cycle means "not ready yet", not "done". It never times out on
-        that, because a node still waiting for a map has no business deciding the
-        maze is explored.
+        The node starts before SLAM has published anything, so its first few
+        ticks legitimately see no map and no frontiers. With the original
+        five-cycle bound at 1 Hz that is a five second fuse burning during
+        startup, and the measured result was a node that announced "exploration
+        complete" twenty seconds after launch having driven to two goals. So
+        termination is gated on `_started_exploring`: until this node has chosen
+        a goal at least once, an empty cycle means "not ready yet", not "done".
+        It never times out on that, because a node that is still waiting for a
+        map has no business deciding the maze is explored.
 
-        The second guard is the bound itself. The frontier count genuinely dips
-        and recovers as SLAM redraws the map behind the robot, from a couple of
-        hundred cells to a couple of dozen, and a couple of dozen scattered cells
-        contain no run of five connected ones. Ten consecutive empty cycles at
-        1 Hz, against a 1 Hz map update, is ten independent looks at the world.
+        The second guard is the bound itself. The frontier grid genuinely dips:
+        measured on lab3_maze_small it fell from 206 cells to 27 and recovered
+        within a few seconds as SLAM redrew the map behind the robot, and 27
+        scattered cells contain no run of five connected ones. Five consecutive
+        empties is well inside that dip. Ten is not, and at 1 Hz against a 1 Hz
+        map update it is ten independent looks at the world.
+
+        Evidence tier: sim, lab3_maze_small, 2026-09-23.
         """
         if not self._started_exploring:
             self.get_logger().info(
@@ -477,6 +640,13 @@ class NavigationNode(Node):
                 f'{decision.clusters_found} clusters on the current map',
                 throttle_duration_sec=5.0)
             self._publish_markers(decision, position)
+            return
+
+        if self._try_forget_exhausted(decision):
+            self._publish_markers(decision, position)
+            return
+
+        if self._try_look_around(decision, position):
             return
 
         if self._try_unstick(decision, position):
@@ -495,8 +665,130 @@ class NavigationNode(Node):
         self._finished = True
         self._path = []
         self._park(position)
+        self._finished_at = position
         self.get_logger().info(
-            f'exploration complete after {self._cycle} cycles. Parking.')
+            f'EXPLORATION COMPLETE after {self._cycle} cycles, '
+            f'{self._elapsed():.0f} s. No reachable frontier for '
+            f'{self.max_empty_cycles} consecutive cycles. Parking.')
+        self._publish_finished()
+
+    def _try_forget_exhausted(self, decision: ExplorationDecision) -> bool:
+        """Let the robot look again at frontiers it has already stood next to.
+
+        Every run in the wide maze ends with the same line in the log, and it is
+        not the line it looks like:
+
+            nothing to explore (10/10), 3 clusters found, 0 unreachable
+
+        Three clusters found and none of them unreachable, because none of them
+        was ever scored. They were dropped before planning by the exhausted goal
+        filter, which removes any goal within `goal.exhaust_radius` of one the
+        robot has already arrived at or stalled against. So the node declared the
+        maze explored while three frontiers stood in it.
+
+        The filter earns its place. Without it H is memoryless and a frontier the
+        robot is standing on keeps winning on distance forever, which is the
+        arrive-reselect-arrive loop that cost a whole Gazebo run. The defect is
+        that it is permanent. A goal is retired on arrival, and arrival means
+        reaching the goal point, which `cluster_goal_point` deliberately walks
+        back from the frontier for clearance. The robot can therefore arrive,
+        retire the goal, never have observed the frontier itself, and be blind to
+        it for the rest of the run.
+
+        So exhaustion becomes forgetful rather than permanent. When the filter has
+        emptied the candidate list and clusters are still there, the list is
+        cleared and the next cycle starts again with everything on the table. It
+        is bounded by `max_exhaust_resets` because an unbounded version cannot
+        terminate: a frontier that genuinely cannot be cleared would be retried
+        forever and the run would never end. Each reset buys another full pass at
+        whatever is left, and when they run out the countdown proceeds as before.
+
+        Measured across six runs in lab3_maze_wide on 2026-09-24, final coverage
+        of the real maze ranged from 64.6 to 100 percent on one configuration, and
+        every one of the short runs ended in this state with clusters still on the
+        map. Evidence tier: sim, 2026-09-24.
+        """
+        if decision.clusters_found == 0:
+            return False          # genuinely nothing on the map, not forgetting
+        if decision.candidates:
+            return False          # they were scored and lost, not filtered out
+        if not self._exhausted:
+            return False          # nothing to forget
+        if self._exhaust_resets >= self.max_exhaust_resets:
+            return False
+
+        self._exhaust_resets += 1
+        forgotten = len(self._exhausted)
+        self._exhausted = []
+        self._empty_cycles = 0
+        self.get_logger().warn(
+            f'cycle {self._cycle}: {decision.clusters_found} clusters still on '
+            f'the map and every goal filtered as already visited. Forgetting '
+            f'{forgotten} retired goals and trying again, '
+            f'{self._exhaust_resets}/{self.max_exhaust_resets}')
+        return True
+
+    def _try_look_around(
+        self, decision: ExplorationDecision, position: Point
+    ) -> bool:
+        """Turn on the spot when the robot is sealed in, before trying to move.
+
+        This is the recovery that matches how the map goes wrong. slam_toolbox
+        builds occupancy by ray tracing every scan in the pose graph: cells a
+        beam passes through are evidence of free, the cell it ends in is
+        evidence of occupied. A phantom wall is a cell that collected occupied
+        evidence from a scan taken at a bad pose, and the only thing that
+        removes it is later beams passing through it from somewhere the robot
+        can actually see it from. New viewing angles are what clears it.
+
+        Rotation provides those and translation barely does. The previous
+        recovery drove to the furthest traversable point within 0.6 m, which is
+        sound when the robot has somewhere to go and useless in the case that
+        actually occurs: a pocket of 13 free cells offers a few centimetres of
+        translation and essentially no new angles. A single turn on the spot
+        sweeps a 360 degree LiDAR across every bearing.
+
+        Doing it without a second publisher on `cmd_vel` takes one observation
+        about the supplied follower. It forces linear velocity to zero whenever
+        the heading error to its target exceeds 0.3 rad, and otherwise sets
+        angular velocity to the error times a gain, clipped. So a waypoint
+        placed at a large fixed bearing off the robot's nose is a pure rotation
+        command: the error stays at `look_around_step` because this republishes
+        it against the current heading every cycle, the follower keeps linear
+        velocity at zero, and the robot turns at its limit without translating.
+        The waypoint sits `look_around_radius` away, a few centimetres, so that
+        if this stops republishing mid-turn the worst the follower can do is
+        creep that far.
+
+        Evidence tier: sim, 2026-09-24.
+        """
+        if decision.clusters_found == 0:
+            return False  # genuinely nothing left, not stuck
+        if any(c.reachable for c in decision.candidates):
+            return False  # not stuck; selection simply had nothing better
+        if self._look_around_cycles >= self.max_look_around_cycles:
+            return False
+
+        pose = self.get_robot_pose()
+        if pose is None:
+            return False
+        yaw = pose[2]
+
+        self._look_around_cycles += 1
+        target = look_around_target(position, yaw, self.look_around_radius,
+                                    self.look_around_step)
+        self.get_logger().warn(
+            f'cycle {self._cycle}: {decision.clusters_found} clusters, none '
+            f'reachable. Turning in place to re-observe, '
+            f'{self._look_around_cycles}/{self.max_look_around_cycles}')
+        self._path = [position, target]
+        self._path_age = 0.0
+        self._committed_goal = None
+        self._publish_path(self._path)
+        # A turn is not a stall, and the progress watchdog measures translation.
+        self._reset_progress(position)
+        self._publish_markers(decision, position)
+        return True
 
     def _try_unstick(
         self, decision: ExplorationDecision, position: Point
@@ -508,9 +800,10 @@ class NavigationNode(Node):
         reported unreachable, and the robot is standing still. What has happened
         is that the robot's own surroundings in the map have closed around it: a
         scatter of spurious occupied cells, each inflated by a 0.15 m collar,
-        leaves its position in a small sealed pocket. On a 7.2 m maze run the
-        pocket was 21 cells against 9096 traversable cells on the same map, and
-        the six frontier goals outside it were plainly reachable in reality.
+        leaves its position in a small sealed pocket. Measured on a 7.2 m maze
+        run, the pocket was 21 cells against 9096 traversable cells on the same
+        map, and the six frontier goals outside it were all plainly reachable in
+        reality.
 
         A stationary robot cannot map its way out of that, because the phantom
         walls only disappear when new scans contradict them. So the answer is to
@@ -574,6 +867,14 @@ class NavigationNode(Node):
     # ------------------------------------------------------------ publishing
 
     def _publish_path(self, points: Sequence[Point]) -> None:
+        # Centre before densifying. Centring moves the planner's own waypoints,
+        # which are the ones whose segments were collision checked; densifying
+        # afterwards interpolates along the moved path so the follower still has
+        # a waypoint inside its look-ahead everywhere. Doing it the other way
+        # round would push a hundred interpolated points independently and bend
+        # the path into something nobody checked.
+        if self._grid is not None and self.path_centring_shift > 0.0:
+            points = centre_path(points, self._grid, self.path_centring_shift)
         points = densify_path(points, self.waypoint_spacing)
         msg = Path()
         msg.header.frame_id = self.global_frame
@@ -667,6 +968,38 @@ class NavigationNode(Node):
             array.markers.append(stale)
         self.goals_pub.publish(array)
 
+    def _elapsed(self) -> float:
+        return (self.get_clock().now() - self._started_at).nanoseconds * 1e-9
+
+    def _publish_finished(self) -> None:
+        """The terminal status, republished every cycle once exploration ends.
+
+        There is no "done" topic in the course package and nothing downstream
+        subscribes to one, so this is a marker like the running status rather
+        than a new interface. What matters is that it is unambiguous and that it
+        is still being published when somebody looks, which is the part that was
+        missing: the exit condition existed and fired, and left nothing behind
+        that said so.
+        """
+        if self._finished_at is None:
+            return
+        marker = Marker()
+        marker.header.frame_id = self.global_frame
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = 'exploration_status'
+        marker.id = 0
+        marker.type = Marker.TEXT_VIEW_FACING
+        marker.action = Marker.ADD
+        marker.pose.position.x = float(self._finished_at[0])
+        marker.pose.position.y = float(self._finished_at[1])
+        marker.pose.position.z = 0.5
+        marker.pose.orientation.w = 1.0
+        marker.scale = Vector3(x=0.0, y=0.0, z=0.14)
+        marker.color = ColorRGBA(r=0.2, g=1.0, b=0.2, a=1.0)
+        marker.text = (f'EXPLORATION COMPLETE | {self._cycle} cycles | '
+                       f'{self._elapsed():.0f} s')
+        self.status_pub.publish(marker)
+
     def _publish_status(
         self, decision: ExplorationDecision, position: Point
     ) -> None:
@@ -725,7 +1058,11 @@ def main(args: list[str] | None = None) -> None:
     node = NavigationNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # ExternalShutdownException is what rclpy raises when the launch system
+        # signals the process, which is every ordinary Ctrl-C of the stack.
+        # Letting it propagate exits 1 and prints a traceback, so a clean
+        # shutdown looks like a crash in the log.
         pass
     finally:
         node.destroy_node()
