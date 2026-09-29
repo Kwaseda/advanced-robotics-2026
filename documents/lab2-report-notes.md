@@ -330,7 +330,7 @@ what the controller spends detouring around the obstacle and catching back up.
 
 The design decision worth defending: the reference reaches the controller as a horizon,
 not as a point. `trajectory_node` publishes `/new_position` exactly as in Lab 1, and
-additionally publishes `nav_msgs/Path` on `/reference_path` holding where the setpoint
+also publishes `nav_msgs/Path` on `/reference_path` holding where the setpoint
 will be at each of the next 20 steps. The MPC fills its TVP from that path.
 
 Holding one point constant across the horizon is correct for a fixed setpoint and wrong

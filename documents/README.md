@@ -15,6 +15,11 @@ the other.
   map inflation plus a reactive check in the follower, and the loop that explores a maze
   until nothing is left to see. In simulation it explores the full 7.3 m maze completely
   in 11 to 13 minutes.
+- **Lab 4** -- grid-based SLAM with a Rao-Blackwellized particle filter (Grid-FastSLAM
+  2.0): the odometry motion model, a likelihood-field measurement model, the improved
+  proposal built from each particle's own scan match, systematic resampling, and the
+  filter step, inside the course's package. Plus a Gazebo maze package and tools to
+  replay one recorded drive through every configuration.
 
 ## Layout
 
@@ -25,6 +30,8 @@ lab2-files/   The same, for Lab 2. Its own workspace, and different package name
               both labs can be sourced at once without shadowing each other.
 lab3-files/   The same, for Lab 3. Needs the course's own r7021e_exploration package
               extracted into its src/ as well; lab3-guide.md says where from.
+lab4-files/   The same, for Lab 4. Self-contained: the course's r7021e_fast_slam package
+              with our modules filled in, and a Gazebo maze package.
 documents/    This file, a guide per lab, and the design notes.
 ```
 
@@ -60,6 +67,20 @@ source install/setup.bash
 ros2 launch r7021e_rrt_bringup lab3.launch.py sim:=true rviz:=true
 ```
 
+Lab 4, the simulator in one terminal and the filter with RViz in another:
+
+```bash
+cd lab4-files/ros2_ws
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch r7021e_fast_slam_sim maze_sim.launch.py
+```
+
+```bash
+source lab4-files/ros2_ws/install/setup.bash
+ros2 launch r7021e_fast_slam r7021e_fast_slam.launch.py use_sim_time:=true
+```
+
 ## Documents
 
 - [lab1-guide.md](lab1-guide.md) -- every Lab 1 task, the parameter files, the control
@@ -75,8 +96,13 @@ ros2 launch r7021e_rrt_bringup lab3.launch.py sim:=true rviz:=true
   rejected alternative in each case, the real-time problems worth explaining rather than
   hiding, the four faults that stopped runs short of the whole maze and how each was
   found, and the final results. The Lab 3 report is written from this.
+- [lab4-guide.md](lab4-guide.md) -- the same for Lab 4: recording the Task 7 drive by
+  teleop, every figure command, the robot session, and a troubleshooting section.
+- [lab4-report-notes.md](lab4-report-notes.md) -- Lab 4's design decisions, the tuning
+  measurements behind every parameter, the three bugs that only running found, and the
+  results. The Lab 4 report is written from this.
 - [planning-notes.md](planning-notes.md) -- design decisions and the reasoning behind
-  the package structure, across all three labs.
+  the package structure, across the labs.
 
 ## Packages
 
@@ -101,6 +127,15 @@ Lab 3:
   algorithm modules import no ROS and are unit tested at a desk.
 - **r7021e_rrt_bringup** -- `lab3.launch.py`, `maze_world.launch.py`, the RViz
   configuration, the parameter files, and the two generated Gazebo mazes.
+
+Lab 4:
+
+- **r7021e_fast_slam** -- the course's package with the five Lab 4 modules implemented
+  (`motion_model`, `measurement_model`, `proposal`, `resampling`, `rbpf`), a test suite,
+  `params.yaml` for simulation and `params_hardware.yaml` for the robot, and tools to
+  replay a bag offline, run the Task 7 sweep, and check a bag's ground truth.
+- **r7021e_fast_slam_sim** -- `maze_sim.launch.py`: the course maze in Gazebo, the Burger
+  in it, and an optional bridge of the simulator's true pose to `/ground_truth`.
 
 Lab 3 also uses two nodes from the course's own `r7021e_exploration` package, unmodified:
 `frontier_detector_node` and `path_follower_node`. That package is not included here; it

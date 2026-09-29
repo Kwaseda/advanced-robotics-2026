@@ -287,8 +287,8 @@ class MPCController(Controller):
             self.last_solve_time = time.perf_counter() - started
             return Command(0.0, 0.0)
 
-        # Wall time around make_step: do-mpc 5.1.1 does not report t_wall_total, and the
-        # whole call is what has to fit inside t_step anyway.
+        # Wall time around the whole make_step call. solver_stats carries per-function
+        # wall times but no total, and the whole call is what has to fit inside t_step.
         self.last_solve_time = time.perf_counter() - started
         stats = getattr(self.mpc, 'solver_stats', {}) or {}
         self.last_success = bool(stats.get('success', True))

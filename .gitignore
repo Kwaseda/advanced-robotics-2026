@@ -8,6 +8,9 @@
 /lab3-files/ros2_ws/build/
 /lab3-files/ros2_ws/install/
 /lab3-files/ros2_ws/log/
+/lab4-files/ros2_ws/build/
+/lab4-files/ros2_ws/install/
+/lab4-files/ros2_ws/log/
 # The course's own package, extracted from the Canvas zip rather than tracked here.
 /lab3-files/ros2_ws/src/r7021e_exploration/
 __pycache__/
@@ -37,16 +40,34 @@ __pycache__/
 !/lab3-files/ros2_ws/bags/*.png
 !/lab3-files/ros2_ws/bags/*.webm
 
+/lab4-files/ros2_ws/bags/*
+!/lab4-files/ros2_ws/bags/.gitkeep
+!/lab4-files/ros2_ws/bags/*.png
+!/lab4-files/ros2_ws/bags/*.webm
+
+# Lab 4 run logs are regenerated from a bag; the figures made from them are kept.
+/lab4-files/ros2_ws/src/r7021e_fast_slam/runs/*
+
 # Backstop for the rest of the tree: the rules above only guard the three bags
 # directories, and "ros2 bag record -o <name>" writes wherever it was run from. These
 # catch a recording that landed somewhere else before it can be pushed.
 *.mcap
 *.db3
 
-# editor and OS noise
+# This repository is public. Course-issued material (handouts, assignment PDFs, saved
+# Canvas pages, the course package zip) stays out of it; documents here are Markdown,
+# with figures as PNG or SVG.
+*.pdf
+*.docx
+*.mhtml
+*.zip
+
+# editor and OS noise, including office lock files left while a document is open
 .vscode/
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
+~$*
+.~lock.*#
 /AGENTS.md
