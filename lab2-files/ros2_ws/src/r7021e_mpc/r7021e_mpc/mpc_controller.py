@@ -1,6 +1,4 @@
 """Nonlinear MPC for the TurtleBot3 unicycle model, built with do-mpc.
-
-No ROS in this file, so it can be tested on its own. mpc_node.py does the ROS side.
 """
 
 import math
