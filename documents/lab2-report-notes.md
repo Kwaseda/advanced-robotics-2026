@@ -79,12 +79,11 @@ Three kinds, exactly as the tutorial describes them.
 | Nonlinear (obstacle) | `set_nl_cons(..., soft_constraint=False)` | `r^2 - ((x-x_o)^2 + (y-y_o)^2) <= 0` |
 
 The lab's input bounds are looser than the robot. The Burger does 0.22 m/s and
-2.84 rad/s. The node takes the minimum of each pair rather than picking one, so the
-model never predicts a speed the robot cannot execute. This matters more than it sounds:
-a model that plans at 0.5 m/s on a robot that saturates at 0.22 predicts a future the
-robot never reaches, and every plan it makes is wrong in the same direction without the
-controller ever finding out. Measured at launch: `v` is capped at 0.22, `omega` at 0.8,
-with `lab.max_linear_velocity` still reading 0.5 on the running node.
+2.84 rad/s, so the controller uses the tighter number of each pair: `max_linear_velocity`
+0.22 from the robot and `max_angular_velocity` 0.8 from the lab. A model that plans at
+0.5 m/s on a robot that saturates at 0.22 predicts a future the robot never reaches, and
+every plan it makes is wrong in the same direction without the controller ever finding
+out.
 
 Obstacle radii are inflated by 0.105 m before reaching the solver. The MPC model is a
 point and the robot is not; the Burger's 178 by 138 mm footprint gives a circumscribing
@@ -349,7 +348,7 @@ extra topic.
 | Setpoint delivery | `_tvp` | A constant in the objective. Changing the goal would mean rebuilding and recompiling the optimizer, which takes seconds. |
 | Solve location | Its own timer at `t_step` | Solving inside the `/odom` callback. The solver then runs at odometry rate, and the horizon covers a different span of real time on every tick. |
 | Obstacle source | One YAML array per axis, inflated once | Separate lists for the constraint and the plot. The picture and the constraint drift apart silently. |
-| Velocity bound | `min(lab bound, robot bound)` | Using the lab's 0.5 m/s directly. The model would predict speeds the robot cannot reach. |
+| Velocity bound | the tighter of the lab and robot limits, 0.22 m/s and 0.8 rad/s | Using the lab's 0.5 m/s directly. The model would predict speeds the robot cannot reach. |
 | Constraint hardness | Hard, `soft_constraint=False` | Soft with a penalty. Always solvable and always smooth, but it weakens the thing the lab asks to demonstrate. |
 | Obstacle hardness, task 4 | Soft, penalty 1e4 | Hard, as in tasks 2 and 3. Deadlocks permanently in Gazebo. See section 7d. |
 | Solver failure | Publish zero, log the status once | Hold the last command. Under a genuinely infeasible problem that drives the robot on a stale command toward a boundary it is forbidden to cross. |
@@ -388,51 +387,12 @@ it, so the trajectory plot had no goal marker on it.
 Use `--times 6 --rate 2` instead, or any repeated publish. The fix costs three seconds and
 the failure is invisible until the plot is made.
 
-## 13. Recording pipeline, verified end to end
+## 13. Recording
 
-`sim` 2026-09-22 and 2026-09-23. `scripts/record_demo.py` records the rosbag and a screen
-capture of RViz together, in one pass. Verified on task 2 and task 4.
-
-| Run | Bag | Video | Topics captured |
-|---|---|---|---|
-| Task 2 | 2.9 MiB, 34.2 s, 5008 msgs | 48.6 s, 1428x966 | all 9 live Lab 2 topics |
-| Task 4 | 41.7 MiB, 339 s, 69903 msgs | 99.1 s, 1428x966 | all 10, including `/reference_path` |
-
-A frame extracted from the task 2 video shows real RViz content: the laser-scan outline
-of the walls, the red obstacle cylinder, the robot, and the Lab 2 displays. The task 4
-bag replays into the same trajectory plot as the live run, with mean tracking error
-0.002 m and closest approach 0.224 m against the 0.225 m constraint.
-
-### The one operational problem, measured rather than guessed
-
-After Ctrl-C, `ros2 bag record` keeps writing for a long time: 20 s in one run, over
-200 s in several others, for bags of a few megabytes. Four candidate causes were ruled
-out by experiment:
-
-| Hypothesis | Test | Result |
-|---|---|---|
-| The signal never arrives | SIGINT sent straight to the recorder's own PID | Just as slow, 101 s |
-| SIGINT is inherited as ignored | Read `SigIgn`/`SigCgt` from `/proc/<pid>/status` | Not ignored; the recorder does catch SIGINT |
-| Too many topics | Full 11-topic list against a reduced 6-topic list | 200 s and 201 s, no difference |
-| Gazebo is responsible | Same recording with no simulator running | Still over 200 s |
-| Machine is saturated | `uptime`, `nproc`, `free` | 12 cores, load 1.0, 23 GB free |
-
-So it is the recorder, in this environment, and it is not something the lab code causes.
-
-What was done about it: `record_demo.py` now waits up to four minutes, prints both file
-sizes, warns explicitly if either recorder did not finish cleanly, and ignores a second
-Ctrl-C, because a second one truncates the bag and `ros2 bag info` still reports a
-truncated bag as valid. Before the fix the script exited with a `TimeoutExpired`
-traceback after 10 s, which on a lab day reads as a failed recording.
-
-No run ever produced a corrupt bag. Even the force-terminated task 4 bag wrote its
-`metadata.yaml` and reads normally. A bag longer than the run is harmless; the tail is the
-robot sitting still.
-
-Not verified: an interactive Ctrl-C in a real terminal. Every test here signalled a
-background process programmatically, which is a different path from a terminal signalling
-its whole foreground process group. CONFIRM BY: run one recording by hand and press
-Ctrl-C before relying on the timings above.
+Bags are recorded with plain `ros2 bag record` (topic list in `lab2-guide.md`), with the
+robot filmed separately. After Ctrl-C the recorder can keep writing for a long time, up to
+a few minutes for bags of a few megabytes. That is the recorder in this environment, not
+the lab code. `pkill -TERM -f "ros2 bag record"` closes it cleanly; no bag was ever corrupt.
 
 ## 12. Verification, and what it does not cover
 

@@ -28,39 +28,6 @@ Four tasks:
 
 ## One-time setup on a new machine
 
-### System packages
-
-```bash
-sudo apt install x11-utils gstreamer1.0-tools gstreamer1.0-plugins-base \
-                 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps \
-                 python3-xlib ros-jazzy-rviz2
-```
-
-| Package | Why |
-|---|---|
-| `x11-utils` | `xwininfo`, which `record_demo.py` uses to find the RViz window |
-| `gstreamer1.0-tools` | `gst-launch-1.0`, the screen recorder |
-| `gstreamer1.0-plugins-base` | `videoconvert` |
-| `gstreamer1.0-plugins-good` | `ximagesrc`, `vp8enc`, `webmmux`, the actual capture and encode |
-| `gstreamer1.0-plugins-base-apps` | `gst-discoverer-1.0`, for checking a recorded video |
-| `python3-xlib` | raising the RViz window before capture starts |
-| `ros-jazzy-rviz2` | already present in a desktop ROS install, listed for a bare one |
-
-Only the recording needs these. The controller itself runs without any of them.
-
-Check the GStreamer plugins are really present before a lab session rather than during
-one, because a missing plugin fails at the moment you press record:
-
-```bash
-gst-inspect-1.0 ximagesrc && gst-inspect-1.0 vp8enc && gst-inspect-1.0 webmmux
-```
-
-If `python3-xlib` is not available on your distribution, this works without sudo:
-
-```bash
-pip install --user --break-system-packages python-xlib
-```
-
 ### Python packages
 
 `do-mpc` and `casadi` are pip packages, not ROS dependencies, so `rosdep` will not install
@@ -101,9 +68,9 @@ source install/setup.bash
 
 ## Running the four tasks
 
-Add `sim:=true` for Gazebo and `rviz:=true` to watch. On the robot, `use_sim_time:=false`
-and set `domain_id` to yours. Every terminal below needs its own
-`export ROS_DOMAIN_ID=34  # turtle4` -- it is included in each block so you can copy the
+Add `sim:=true` for Gazebo and `rviz:=true` to watch. `sim:=true` also switches the nodes
+to simulation time, so on the robot you simply leave it out. Every terminal needs its own
+`export ROS_DOMAIN_ID=34  # turtle4`; it is included in each block so you can copy the
 whole thing straight into a fresh terminal.
 
 ### Task 1, setpoint tracking
@@ -205,97 +172,44 @@ No reactive controller has anything equivalent to show.
 
 ## Parameters worth knowing
 
-All in `r7021e_mpc_bringup/config/`. `robot.yaml` loads first and owns the physical
-limits, `mpc.yaml` holds the shared defaults, and `mpc_task<N>.yaml` changes only what
-that task needs.
+All in `r7021e_mpc_bringup/config/`. `mpc.yaml` holds the shared values and
+`mpc_task<N>.yaml` changes only what that task needs. Edit, save and relaunch: the node
+reads its parameters once at startup, so `ros2 param set` has no effect.
 
 | Parameter | Default | What it does |
 |---|---|---|
-| `t_step` | 0.1 | Prediction step and control period, one number for both |
-| `n_horizon` | 20 | Steps predicted ahead |
+| `t_step` | 0.1 | Prediction step and control period (also a launch argument) |
+| `n_horizon` | 20 | Steps predicted ahead (also a launch argument) |
+| `max_linear_velocity` | 0.22 | The Burger's limit, tighter than the lab's 0.5 |
+| `max_angular_velocity` | 0.8 | The lab's limit, tighter than the Burger's 2.84 |
 | `boundary_x`, `boundary_y` | `[-1, 1]` | The hard boundary box, widened per task |
 | `obstacle_x/y/radius` | unset | Parallel arrays, one entry each per obstacle |
 | `obstacle_inflation` | 0.105 | Added to every obstacle radius for the robot's footprint |
-| `obstacle_soft` | false | Whether obstacles are hard constraints or penalised ones |
-| `lab.max_linear_velocity` | 0.5 | The lab's stated bound |
-| `robot.max_linear_velocity` | 0.22 | The Burger's real bound |
-
-The node uses the tighter of the two velocity bounds. Both are declared so neither number
-has to be quietly edited to mean the other, and a model predicting 0.5 m/s on a robot
-that saturates at 0.22 plans a future it cannot reach.
+| `obstacle_soft` | false | Hard or penalised obstacle constraints (soft in task 4) |
+| `r_input` | 0.01 | Penalty on changes in v and omega; raise it for smoother motion |
+| `goal_tolerance` | 0.05 | Stop distance |
 
 ## Recording
 
-`record_demo.py` records the rosbag and a screen capture of RViz together, in one pass.
-It needs the system packages from the setup section above.
-
-Three terminals, in this order:
+In its own terminal, started before the goal is sent:
 
 ```bash
-# 1. the launch file, with RViz, started by you
 export ROS_DOMAIN_ID=34  # turtle4
-ros2 launch r7021e_mpc_bringup lab2.launch.py task:=2 sim:=true rviz:=true
+ros2 bag record -o bags/task2-obstacle /odom /cmd_vel /new_position /reference_path \
+    /mpc_prediction /mpc_obstacles /goal_marker /tf /tf_static
 ```
 
-```bash
-# 2. the recorder, once RViz is actually on screen
-export ROS_DOMAIN_ID=34  # turtle4
-python3 scripts/record_demo.py bags/task2-obstacle
-```
+Add `/clock` in simulation. Film the real robot with a phone at the same time.
 
-```bash
-# 3. the task itself
-export ROS_DOMAIN_ID=34  # turtle4
-ros2 topic pub --times 6 --rate 2 /new_position geometry_msgs/msg/Pose "{position: {x: 1.5, y: 0.0, z: 0.0}}"
-```
-
-It writes the bag to `bags/task2-obstacle/` and the video to `bags/task2-obstacle.webm`.
-Task 4 needs no third terminal: the trajectory generator drives itself, so start the
-recorder and let the two laps run.
-
-### Stopping it, which is the part that needs care
-
-Press Ctrl-C **once** in terminal 2, then wait and do nothing else.
-
-`ros2 bag record` keeps writing after the interrupt, and on the development machine that
-took anywhere from 20 seconds to over three minutes for bags of only a few megabytes.
-That is the recorder, not a lost keypress: a signal sent straight to its own process ID
-was just as slow. The script waits for it and prints both file sizes when it is genuinely
-finished:
-
-```
-  video stopped after 0.1s
-  bag stopped after 84.3s
-
-  bag   bags/task2-obstacle/  2.9 MB
-  video bags/task2-obstacle.webm  0.6 MB
-
-Verify with:  ros2 bag info bags/task2-obstacle
-              gst-discoverer-1.0 bags/task2-obstacle.webm
-```
-
-A second Ctrl-C, or closing the terminal, truncates the bag, and `ros2 bag info` will
-still call the truncated file a valid bag. That is why the script ignores a second Ctrl-C.
-
-If it is still going after a few minutes, from another terminal:
-
-```bash
-pkill -TERM -f "ros2 bag record"
-```
-
-SIGTERM closed it cleanly in every test, writing its `metadata.yaml` and leaving a bag
-that `ros2 bag info` reads normally.
-
-### Always verify before you leave
+Press Ctrl-C once and wait: the recorder can take a while to finish writing. If it is still
+going after a minute, `pkill -TERM -f "ros2 bag record"` from another terminal closes it
+cleanly. Then check the bag before leaving:
 
 ```bash
 ros2 bag info bags/task2-obstacle
 ```
 
-Check `Duration` and `Messages` against the run you just did, and check that
-`/odom`, `/cmd_vel` and `/new_position` all have non-zero counts. A bag that came out
-longer than the run is harmless, the tail is just the robot sitting still. A bag that is
-much shorter is the one to re-record.
+`/odom`, `/cmd_vel` and `/new_position` should all have non-zero counts.
 
 Plotting, with the obstacles and boundary drawn from the same parameter file the
 controller loaded:
@@ -303,7 +217,6 @@ controller loaded:
 ```bash
 python3 scripts/plot_trajectory.py bags/task2-obstacle \
   --constraints ros2_ws/src/r7021e_mpc_bringup/config/mpc_task2.yaml \
-  --base-config ros2_ws/src/r7021e_mpc_bringup/config/mpc.yaml \
   -o bags/task2_trajectory.png
 ```
 

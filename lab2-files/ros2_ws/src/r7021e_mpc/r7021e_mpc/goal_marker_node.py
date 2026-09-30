@@ -1,19 +1,4 @@
-"""Republish the current goal on /new_position as an RViz-drawable marker.
-
-    /new_position  geometry_msgs/Pose         the goal the controller chases
-    /goal_marker   visualization_msgs/Marker  the same goal, drawable in RViz
-
-/new_position is a bare geometry_msgs/Pose: no header, so no frame and no
-timestamp, and RViz has no display that can draw one directly. The topic name and
-type are fixed by the course, so the message itself can't change -- this node
-republishes it as something RViz can draw instead.
-
-Its own node rather than a branch inside controller_node, for the same reason
-scan_monitor_node is: the control loop has no use for a drawable marker.
-
-Drawn in the odom frame, since /new_position carries no frame of its own and the
-controller already treats it as being in the odometry frame.
-"""
+"""Redraws /new_position as a marker, since a bare Pose has no frame RViz can draw."""
 
 from geometry_msgs.msg import Pose
 import rclpy
@@ -23,8 +8,6 @@ from visualization_msgs.msg import Marker
 
 
 class GoalMarkerNode(Node):
-    """Publishes a Marker at the position most recently seen on /new_position."""
-
     def __init__(self) -> None:
         super().__init__('goal_marker_node')
 
@@ -43,7 +26,6 @@ class GoalMarkerNode(Node):
         )
 
     def on_goal(self, msg: Pose) -> None:
-        """Redraw the marker at the new goal position."""
         marker = Marker()
         marker.header.frame_id = self.frame_id
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -62,8 +44,6 @@ class GoalMarkerNode(Node):
         marker.color.g = 1.0
         marker.color.b = 0.0
         marker.color.a = 1.0
-        # No lifetime set (defaults to zero, "forever"): stays visible until the
-        # next goal replaces it.
         self.marker_pub.publish(marker)
 
 
@@ -73,8 +53,10 @@ def main(args=None) -> None:
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):
-        # rclpy raises ExternalShutdownException on Ctrl-C, not KeyboardInterrupt.
         pass
+    except Exception:
+        if rclpy.ok():  # errors after Ctrl-C are shutdown noise
+            raise
     finally:
         node.destroy_node()
         if rclpy.ok():
